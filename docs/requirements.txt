@@ -1,0 +1,4 @@
+sphinx>=8
+myst-parser>=4
+sphinx-autodoc-typehints>=2
+pydata-sphinx-theme>=0.16
