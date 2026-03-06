@@ -2,7 +2,7 @@
 
 A Python toolkit for constructing and preparing MOF structures.
 
-[![Docs](https://img.shields.io/badge/docs-online-blue)](https://chenxili01.github.io/MOFBuilder/)
+[![Docs](https://img.shields.io/badge/docs-online-blue)](https://chenxili01.github.io/MofBuilder/)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://badge.fury.io/py/mofbuilder.svg)](https://badge.fury.io/py/mofbuilder)
@@ -62,8 +62,8 @@ conda install -c conda-forge openmm-ml
 ### 4. Install MOFBuilder from source
 
 ```bash
-git clone https://github.com/chenxili01/MOFBuilder.git
-cd MOFBuilder
+git clone https://github.com/chenxili01/MofBuilder.git
+cd MofBuilder
 pip install -e .
 ```
 
@@ -74,9 +74,9 @@ pip install -e .
 Example workflow:
 
 ```python
-from mofbuilder import MetalOrganicFrameworkBuilder as MOFBuilder
+from mofbuilder import MetalOrganicFrameworkBuilder as MofBuilder
 # Build UiO-66 MOF
-mof = MOFBuilder(mof_family="UiO-66")
+mof = MofBuilder(mof_family="UiO-66")
 mof.linker_smiles = "O=C([O-])C(C=C1)=CC=C1C([O-])=O"
 mof.node_metal = "Zr"
 uio = mof.build()
@@ -102,7 +102,7 @@ output_prefix="UiO66_MD")
 
 Full documentation is available at:
 
-https://chenxili01.github.io/MOFBuilder/
+https://chenxili01.github.io/MofBuilder/
 
 ---
 
@@ -125,8 +125,8 @@ If you use **MOFBuilder** in your research, please cite:
 
 - ## Links
 
-- **Documentation:** https://chenxili01.github.io/MOFBuilder/
-- **Source code:** https://github.com/chenxili01/MOFBuilder
-- **Issues:** https://github.com/chenxili01/MOFBuilder/issues
+- **Documentation:** https://chenxili01.github.io/MofBuilder/
+- **Source code:** https://github.com/chenxili01/MofBuilder
+- **Issues:** https://github.com/chenxili01/MofBuilder/issues
 - **Nodes/Net library for MOFBuilder:** https://github.com/chenxili01/MOFBuilder_library
 
