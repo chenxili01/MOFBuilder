@@ -2,7 +2,7 @@
 
 A Python toolkit for constructing and preparing MOF structures.
 
-[![Docs](https://img.shields.io/badge/docs-online-blue)](https://chenxili01.github.io/MofBuilder/)
+[![Docs](https://img.shields.io/badge/docs-online-blue)](https://chenxili01.github.io/MOFBuilder/)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://badge.fury.io/py/mofbuilder.svg)](https://badge.fury.io/py/mofbuilder)
@@ -102,7 +102,7 @@ output_prefix="UiO66_MD")
 
 Full documentation is available at:
 
-https://chenxili01.github.io/MofBuilder/
+https://chenxili01.github.io/MOFBuilder/
 
 ---
 
@@ -125,8 +125,8 @@ If you use **MOFBuilder** in your research, please cite:
 
 - ## Links
 
-- **Documentation:** https://chenxili01.github.io/MofBuilder/
-- **Source code:** https://github.com/chenxili01/MofBuilder
-- **Issues:** https://github.com/chenxili01/MofBuilder/issues
+- **Documentation:** https://chenxili01.github.io/MOFBuilder/
+- **Source code:** https://github.com/chenxili01/MOFBuilder
+- **Issues:** https://github.com/chenxili01/MOFBuilder/issues
 - **Nodes/Net library for MOFBuilder:** https://github.com/chenxili01/MOFBuilder_library
 
