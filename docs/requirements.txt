@@ -2,3 +2,5 @@ sphinx>=8
 myst-parser>=4
 sphinx-autodoc-typehints>=2
 pydata-sphinx-theme>=0.16
+numpy>=1.23
+networkx>=2.8

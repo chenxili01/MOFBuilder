@@ -28,9 +28,15 @@ source_suffix = {
 }
 
 templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "generated/*"]
+exclude_patterns = [
+    "_build",
+    "Thumbs.db",
+    ".DS_Store",
+    "generated/*",
+    "api_generated/*",
+]
 
-autosummary_generate = True
+autosummary_generate = False
 autosummary_generate_overwrite = True
 autosummary_ignore_module_all = False
 autosummary_imported_members = False
@@ -49,9 +55,12 @@ autodoc_mock_imports = [
     "veloxchem",
     "mpi4py",
     "openmm",
+    "openmm.app",
+    "openmm.unit",
     "rdkit",
     "xtb",
     "py3Dmol",
+    "py3dmol",
 ]
 napoleon_google_docstring = True
 napoleon_numpy_docstring = True
