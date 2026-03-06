@@ -31,9 +31,24 @@ classifiers = [
 ]
 requires-python = ">=3.8"
 dependencies = [
+    "veloxchem",
+    "numpy>=1.21",
+    "networkx>=2.8",
 ]
 
 [project.optional-dependencies]
+core = [
+    "mpi4py>=3.1",
+    "scipy>=1.8",
+    "h5py>=3.8",
+]
+qm = [
+    "veloxchem",
+]
+md = [
+    "openmm>=8.0",
+    "rdkit",
+]
 dev = [
     "pytest>=6.0",
     "pytest-cov>=2.0",
@@ -45,7 +60,7 @@ dev = [
 ]
 docs = [
     "sphinx>=4.0",
-    "sphinx-rtd-theme>=1.0",
+    "pydata-sphinx-theme>=0.15",
     "sphinx-autodoc-typehints>=1.12",
     "myst-parser>=0.18",
 ]
@@ -54,6 +69,10 @@ analysis = [
 ]
 visualization = [
     "py3dmol",
+]
+test = [
+    "pytest>=6.0",
+    "pytest-cov>=2.0",
 ]
 
 [project.urls]
@@ -85,6 +104,9 @@ addopts = [
     "--cov-report=xml",
 ]
 markers = [
+    "smoke: fast dependency-light smoke tests",
+    "core: marks core module tests",
+    "md: marks molecular dynamics module tests",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
