@@ -52,7 +52,7 @@ autodoc_default_options = {
 autodoc_typehints = "description"
 
 autodoc_mock_imports = [
-    "veloxchem",
+     "veloxchem",
     "mpi4py",
     "openmm",
     "openmm.app",
