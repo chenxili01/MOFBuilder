@@ -149,12 +149,12 @@ class TerminationDefectGenerator:
             defectG = cleaved_eG.copy()
             new_unsaturated_linkers = self._find_unsaturated_linkers(
                 defectG, self.linker_connectivity)
-            if (not self.use_termination) and (
-                    not self.clean_unsaturated_linkers):
+            if ((not self.use_termination) and (
+                    not self.clean_unsaturated_linkers)):
                 self.unsaturated_linkers = new_unsaturated_linkers
                 return defectG
-            elif (not self.use_termination) and (
-                    self.clean_unsaturated_linkers):
+            elif ((not self.use_termination) and (
+                    self.clean_unsaturated_linkers)):
                 for linker_name in new_unsaturated_linkers:
                     if linker_name in defectG.nodes():
                         defectG.remove_node(linker_name)
@@ -163,8 +163,8 @@ class TerminationDefectGenerator:
                 self.updated_unsaturated_nodes = self.unsaturated_nodes
                 self.updated_matched_vnode_xind = self.matched_vnode_xind
                 return defectG
-            elif (self.use_termination) and (
-                    not self.clean_unsaturated_linkers):
+            elif ((self.use_termination) and (
+                    not self.clean_unsaturated_linkers)):
                 new_unsaturated_nodes = self._find_unsaturated_nodes(
                     defectG, self.node_connectivity)
                 termG, _ = self._add_terminations_to_unsaturated_nodes(
