@@ -285,7 +285,7 @@ class Framework:
         self.defectgenerator.termination_X_data = self.termination_X_data
         self.defectgenerator.termination_Y_data = self.termination_Y_data
         self.defectgenerator.linker_connectivity = self.linker_connectivity
-        self.defectgenerator.node_connectivity = self.node_connectivity + self.vir_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
+        self.defectgenerator.node_connectivity = self.node_connectivity + self.virtual_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
         self.defectgenerator._debug = self._debug
         self.defectgenerator.eG_index_name_dict = self.graph_index_name_dict
         self.defectgenerator.sc_unit_cell = self.sc_unit_cell

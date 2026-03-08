@@ -49,8 +49,8 @@ class SupercellBuilder:
         self.cell_info = None  #a list of 6 elements, a,b,c,alpha,beta,gamma
         #virtual edge settings for bridge type nodes
         self.add_virtual_edge = False
-        self.vir_edge_range = 0.5  #in fractional coordinate should be less than 0.5
-        self.vir_edge_max_neighbor = 2
+        self.virtual_edge_range = 0.5  #in fractional coordinate should be less than 0.5
+        self.virtual_edge_max_neighbor = 2
 
         #will be generated during the process
         self.multiedge_bundlings = None
@@ -119,8 +119,8 @@ class SupercellBuilder:
             superG = self._add_virtual_edge(
                 self.sc_unit_cell,
                 supG.copy(),
-                self.vir_edge_range,
-                self.vir_edge_max_neighbor,
+                self.virtual_edge_range,
+                self.virtual_edge_max_neighbor,
             )
             if self._debug:
                 self.ostream.print_info("added virtual edge for bridge nodes")
@@ -465,8 +465,8 @@ class SupercellBuilder:
             add_superG = self._add_virtual_edge(
                 self.sc_unit_cell,
                 superG,
-                self.vir_edge_range,
-                self.vir_edge_max_neighbor,
+                self.virtual_edge_range,
+                self.virtual_edge_max_neighbor,
             )
             if self._debug():
                 self.ostream.print_info("add virtual edge")

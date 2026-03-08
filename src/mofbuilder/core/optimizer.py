@@ -141,9 +141,9 @@ class NetOptimizer:
         - super_multiedge_bundlings (dict):multiedge bundlings in the supercell, used for the supercell construction
         - superG (networkx graph):graph of the supercell
         - add_virtual_edge (bool): add virtual edge to the target MOF cell
-        - vir_edge_range (float): range to search the virtual edge between two Vnodes directly, should <= 0.5,
+        - virtual_edge_range (float): range to search the virtual edge between two Vnodes directly, should <= 0.5,
         used for the virtual edge addition of bridge type nodes: nodes and nodes can connect directly without linker
-        - vir_edge_max_neighbor (int): maximum number of neighbors of the node with virtual edge, used for the virtual edge addition of bridge type nodes
+        - virtual_edge_max_neighbor (int): maximum number of neighbors of the node with virtual edge, used for the virtual edge addition of bridge type nodes
         - remove_node_list (list):list of nodes to remove in the target MOF cell
         - remove_edge_list (list):list of edges to remove in the target MOF cell
         - eG (networkx graph):graph of the target MOF cell with only EDGE and V nodes
@@ -293,6 +293,13 @@ class NetOptimizer:
         else:
             new_edge_length = self.linker_frag_length + 2 * self.constant_length + 2 * x_com_length
 
+        old_edge_ref = np.mean(list(lengths)) if len(lengths) > 0 else None
+        if old_edge_ref is not None and old_edge_ref > 1e-8:
+            self.opt_drv.edge_length_scale_hint = float(new_edge_length /
+                                                        old_edge_ref)
+        else:
+            self.opt_drv.edge_length_scale_hint = None
+
         # update the node ccoords in G by loop edge, start from the start_node, and then update the connected node ccoords by the edge length, and update the next node ccords from the updated node
 
         new_ccoords, old_ccoords = self._update_node_ccoords(
@@ -437,7 +444,7 @@ class NetOptimizer:
                     roted_xx = np.dot(extended_e_xx_vec, rot)
 
                     if np.dot(roted_xx[1] - roted_xx[0],
-                              xx_vector[1] - xx_vector[0]) < 0:
+                              xx_vector[1] - xx_vector[0]) <= 0:
                         ##rotate 180 around the axis of the cross product of the two vectors
                         axis = np.cross(roted_xx[1] - roted_xx[0],
                                         xx_vector[1] - xx_vector[0])
@@ -672,7 +679,7 @@ class NetOptimizer:
         updated_ccoords = {}
         for n in sG.nodes():
             updated_ccoords[n] = fractional_to_cartesian(
-                T_unitcell, sG.nodes[n]["fcoords"].T).T
+                sG.nodes[n]["fcoords"], T_unitcell)
             sG.nodes[n]["ccoords"] = updated_ccoords[n]
         return sG, updated_ccoords
 
@@ -710,7 +717,10 @@ class OptimizationDriver:
         self.display = True
         self.eps = 1e-8
 
-        self.fixed_cell_shape = True
+        self.fixed_cell_shape = False
+        self.cell_angle_deviation_deg = 0.0
+        self.edge_length_scale_hint = None
+        self.analytic_scale_max_pairs = 1000
 
         self._debug = False
 
@@ -938,11 +948,13 @@ class OptimizationDriver:
                                   ratio_ba, ratio_ca):
         """Sum of squared differences between old fractional coords and new coords in new cell (optionally fixed shape)."""
         a_old, b_old, c_old, alpha_old, beta_old, gamma_old = old_cell_params
-        a_new, b_new, c_new, _, _, _ = params
+        a_new, b_new, c_new, alpha_new, beta_new, gamma_new = params
         #constrain the angles to be the same as old cell
         if self.fixed_cell_shape:
             b_new = a_new * ratio_ba
             c_new = a_new * ratio_ca
+        if self.cell_angle_deviation_deg <= 0.0:
+            alpha_new, beta_new, gamma_new = alpha_old, beta_old, gamma_old
 
         # Compute transformation matrix for the old unit cell, T is the unit cell matrix
         T_old = unit_cell_to_cartesian_matrix(a_old, b_old, c_old, alpha_old,
@@ -955,8 +967,8 @@ class OptimizationDriver:
         # old_fractional_coords = cartesian_to_fractional(old_cartesian_coords,T_old_inv)
 
         # Compute transformation matrix for the new unit cell
-        T_new = unit_cell_to_cartesian_matrix(a_new, b_new, c_new, alpha_old,
-                                              beta_old, gamma_old)
+        T_new = unit_cell_to_cartesian_matrix(a_new, b_new, c_new, alpha_new,
+                                              beta_new, gamma_new)
         T_new_inv = np.linalg.inv(T_new)
 
         # Convert the new Cartesian coordinates to fractional coordinate using the old unit cell
@@ -969,6 +981,142 @@ class OptimizationDriver:
         diff = new_fractional_coords - old_fractional_coords
         return np.sum(diff**2)  # Sum of squared differences
 
+    def _analytic_initial_cell_params(self,
+                                      old_cell_params,
+                                      old_cartesian_coords,
+                                      new_cartesian_coords,
+                                      max_pairs=None):
+        """Build an analytic initial cell guess before numerical minimization."""
+        a_old, b_old, c_old, alpha, beta, gamma = old_cell_params
+        T0 = unit_cell_to_cartesian_matrix(a_old, b_old, c_old, alpha, beta,
+                                           gamma)
+        T0_inv = np.linalg.inv(T0)
+        fcoords = cartesian_to_fractional(old_cartesian_coords, T0_inv)
+
+        if self.fixed_cell_shape:
+            scale = self._analytic_global_scale(fcoords,
+                                                new_cartesian_coords,
+                                                T0,
+                                                max_pairs=max_pairs)
+            a_new, b_new, c_new = scale * a_old, scale * b_old, scale * c_old
+        else:
+            sa, sb, sc = self._analytic_abc_scales(fcoords,
+                                                   new_cartesian_coords,
+                                                   T0,
+                                                   max_pairs=max_pairs)
+            a_new, b_new, c_new = sa * a_old, sb * b_old, sc * c_old
+
+        return np.array([a_new, b_new, c_new, alpha, beta, gamma], dtype=float)
+
+    def _analytic_global_scale(self, fcoords, r_new, T0, max_pairs=None):
+        """Closed-form global scale from pairwise distances."""
+        if max_pairs is None:
+            max_pairs = self.analytic_scale_max_pairs
+
+        n_points = len(fcoords)
+        num = 0.0
+        den = 0.0
+        count = 0
+
+        for i in range(n_points):
+            for j in range(i + 1, n_points):
+                df = fcoords[i] - fcoords[j]
+                d0 = np.linalg.norm(np.dot(T0, df))
+                if d0 < 1e-8:
+                    continue
+
+                d_new = np.linalg.norm(r_new[i] - r_new[j])
+                num += d_new * d0
+                den += d0**2
+                count += 1
+
+                if count >= max_pairs:
+                    break
+            if count >= max_pairs:
+                break
+
+        if den < 1e-12:
+            raise ValueError(
+                "Degenerate structure: cannot determine global scale.")
+        return max(num / den, 1e-6)
+
+    def _analytic_abc_scales(self, fcoords, r_new, T0, max_pairs=None):
+        """Axis-wise least-squares scales in the old-cell basis."""
+        if max_pairs is None:
+            max_pairs = self.analytic_scale_max_pairs
+
+        T0_inv = np.linalg.inv(T0)
+        n_points = len(fcoords)
+        num = np.zeros(3, dtype=float)
+        den = np.zeros(3, dtype=float)
+        count = 0
+
+        for i in range(n_points):
+            for j in range(i + 1, n_points):
+                df = fcoords[i] - fcoords[j]
+                if np.linalg.norm(df) < 1e-8:
+                    continue
+                q_new = np.dot(T0_inv, (r_new[i] - r_new[j]))
+                num += q_new * df
+                den += df**2
+                count += 1
+
+                if count >= max_pairs:
+                    break
+            if count >= max_pairs:
+                break
+
+        if np.all(den < 1e-12):
+            raise ValueError("Degenerate structure: cannot determine a/b/c scales.")
+
+        scales = np.ones(3, dtype=float)
+        mask = den > 1e-12
+        scales[mask] = num[mask] / den[mask]
+        scales = np.clip(scales, 1e-6, None)
+        return scales[0], scales[1], scales[2]
+
+    def _build_local_pairs_from_coords(self, coords, k_neighbors=2):
+        """Build deterministic local index pairs using K nearest neighbors per point."""
+        n_points = len(coords)
+        if n_points < 2:
+            return []
+        k = max(1, min(int(k_neighbors), n_points - 1))
+        pairs = set()
+        for i in range(n_points):
+            dists = np.linalg.norm(coords - coords[i], axis=1)
+            order = np.argsort(dists)
+            neighbors = [j for j in order if j != i][:k]
+            for j in neighbors:
+                ii, jj = (i, j) if i < j else (j, i)
+                pairs.add((ii, jj))
+        return sorted(pairs)
+
+    def _analytic_local_edge_scale(self,
+                                   old_cartesian_coords,
+                                   new_cartesian_coords,
+                                   k_neighbors=2):
+        """Robust global scale from local-edge distance ratios (median)."""
+        local_pairs = self._build_local_pairs_from_coords(old_cartesian_coords,
+                                                          k_neighbors)
+        ratios = []
+        for i, j in local_pairs:
+            d_old = np.linalg.norm(old_cartesian_coords[i] -
+                                   old_cartesian_coords[j])
+            if d_old < 1e-8:
+                continue
+            d_new = np.linalg.norm(new_cartesian_coords[i] -
+                                   new_cartesian_coords[j])
+            ratio = d_new / d_old
+            if np.isfinite(ratio) and ratio > 0:
+                ratios.append(ratio)
+
+        if len(ratios) == 0:
+            raise ValueError(
+                "No valid local-edge pairs for median scale estimation.")
+
+        scale = np.clip(np.median(ratios), 1e-6, 1e3)
+        return float(scale)
+
     def _optimize_cell_params(self, cell_info, original_ccoords,
                               updated_ccoords):
         """Minimize fractional coordinate change when scaling cell to fit updated_ccoords; returns (a, b, c, alpha, beta, gamma)."""
@@ -976,36 +1124,127 @@ class OptimizationDriver:
                             "scipy is required for optimize_cell_parameters.")
 
         # Old cell parameters (example values)
-        old_cell_params = cell_info  # [a, b, c, alpha, beta, gamma]
+        old_cell_params = np.array(cell_info, dtype=float)
 
-        # Old Cartesian coordinates of points (example values)
-        old_cartesian_coords = np.vstack(list(
-            original_ccoords.values()))  # original_ccoords
+        common_keys = [k for k in original_ccoords if k in updated_ccoords]
+        if common_keys:
+            old_cartesian_coords = np.vstack([original_ccoords[k]
+                                              for k in common_keys])
+            new_cartesian_coords = np.vstack([updated_ccoords[k]
+                                              for k in common_keys])
+        else:
+            old_cartesian_coords = np.empty((0, 3), dtype=float)
+            new_cartesian_coords = np.empty((0, 3), dtype=float)
 
-        # New Cartesian coordinates of the same points (example values)
-        new_cartesian_coords = np.vstack(list(
-            updated_ccoords.values()))  # updated_ccoords
         # Initial guess for new unit cell parameters (e.g., slightly modified cell)
-        initial_params = cell_info
+        initial_params = old_cell_params.copy()
+        have_initial_guess = False
+        n_pairs = len(common_keys) * (len(common_keys) - 1) // 2
+        if n_pairs > 0:
+            try:
+                local_scale = self._analytic_local_edge_scale(
+                    old_cartesian_coords, new_cartesian_coords, k_neighbors=2)
+                initial_params[0:3] *= local_scale
+                self.ostream.print_info(
+                    "Analytic local-edge initial scale: "
+                    f"{local_scale:.6f}; initial cell guess: {np.round(initial_params, 5)}"
+                )
+                have_initial_guess = True
+            except Exception as exc:
+                self.ostream.print_warning(
+                    f"Analytic local-edge initial scale failed: {exc}")
 
-        # Bounds: a, b, c > 3; angles [0, 180]
-        bounds = [(3, None), (3, None), (3, None)] + [(20, 180)] * 3
+            if not have_initial_guess:
+                try:
+                    initial_params = self._analytic_initial_cell_params(
+                        old_cell_params, old_cartesian_coords,
+                        new_cartesian_coords)
+                    self.ostream.print_info(
+                        f"Analytic initial cell guess: {np.round(initial_params, 5)}"
+                    )
+                    have_initial_guess = True
+                except Exception as exc:
+                    self.ostream.print_warning(
+                        f"Analytic initial cell guess failed: {exc}")
+
+        if not have_initial_guess:
+            ratio_hint = self.edge_length_scale_hint
+            if ratio_hint is not None and np.isfinite(ratio_hint) and ratio_hint > 0:
+                initial_params[0:3] *= ratio_hint
+                self.ostream.print_info(
+                    "Sparse-cell scaling fallback used (new_edge/old_edge ratio). "
+                    f"Scale: {ratio_hint:.6f}")
+                have_initial_guess = True
+            else:
+                self.ostream.print_warning(
+                    "No local/analytic scale available and no edge-length ratio hint; "
+                    "using template cell as initial guess.")
 
         ratio_ba = round(initial_params[1] / initial_params[0], 5)
         ratio_ca = round(initial_params[2] / initial_params[0], 5)
 
+        key_to_idx = {"a": 0, "b": 1, "c": 2, "alpha": 3, "beta": 4, "gamma": 5}
+        optimize_angles = self.cell_angle_deviation_deg > 0.0
+
+        if self.fixed_cell_shape:
+            active_keys = ["a"] + (["alpha", "beta", "gamma"]
+                                   if optimize_angles else [])
+        else:
+            active_keys = ["a", "b", "c"] + (["alpha", "beta", "gamma"]
+                                             if optimize_angles else [])
+
+        x0 = np.array([initial_params[key_to_idx[k]] for k in active_keys],
+                      dtype=float)
+        bounds = []
+        for key in active_keys:
+            if key in ("a", "b", "c"):
+                bounds.append((3, None))
+            else:
+                center = old_cell_params[key_to_idx[key]]
+                low = max(20.0, center - self.cell_angle_deviation_deg)
+                high = min(180.0, center + self.cell_angle_deviation_deg)
+                if high < low:
+                    high = low
+                bounds.append((low, high))
+
+        def _reconstruct_params(active_params):
+            full_params = old_cell_params.copy()
+            for key, value in zip(active_keys, active_params):
+                full_params[key_to_idx[key]] = value
+            if self.fixed_cell_shape:
+                full_params[1] = full_params[0] * ratio_ba
+                full_params[2] = full_params[0] * ratio_ca
+            if not optimize_angles:
+                full_params[3:] = old_cell_params[3:]
+            return full_params
+
+        def _active_scale_objective(active_params):
+            full_params = _reconstruct_params(active_params)
+            return self._scale_objective_function(full_params, old_cell_params,
+                                                  old_cartesian_coords,
+                                                  new_cartesian_coords,
+                                                  ratio_ba, ratio_ca)
+
         # Optimize using L-BFGS-B to minimize the objective function
-        result = minimize(
-            self._scale_objective_function,
-            x0=initial_params,
-            args=(old_cell_params, old_cartesian_coords, new_cartesian_coords,
-                  ratio_ba, ratio_ca),
-            method="L-BFGS-B",
-            bounds=bounds,
-        )
+        result = minimize(_active_scale_objective,
+                          x0=x0,
+                          method="L-BFGS-B",
+                          bounds=bounds)
+        result_fun = result.fun if getattr(result, "fun", None) is not None else np.nan
 
         # Extract optimized parameters
-        optimized_params = np.round(result.x, 5)
+        if (not result.success) or (result.x is None) or (
+                not np.all(np.isfinite(result.x))) or (
+                    not np.isfinite(result_fun)):
+            self.ostream.print_warning(
+                f"Cell parameter optimization failed (status={result.status}): {result.message}"
+            )
+            self.ostream.print_warning(
+                "Falling back to template cell parameters.")
+            optimized_params = np.round(initial_params, 5)
+        else:
+            optimized_params = np.round(_reconstruct_params(result.x), 5)
+
         self.ostream.print_info(
             f"Optimized New Cell Parameters: {optimized_params}\nTemplate Cell Parameters: {cell_info}"
         )
@@ -1025,7 +1264,7 @@ class OptimizationDriver:
         updated_ccoords = {}
         for n in sG.nodes():
             updated_ccoords[n] = fractional_to_cartesian(
-                T_unitcell, sG.nodes[n]["fcoords"].T).T
+                sG.nodes[n]["fcoords"], T_unitcell)
             sG.nodes[n]["ccoords"] = updated_ccoords[n]
         return sG, updated_ccoords
 
@@ -1070,4 +1309,5 @@ def expand_set_rots(pname_set_dict, set_rotations, sorted_nodes):
         for k in pname_set_dict[name]["ind_ofsortednodes"]:
             rotations[k] = set_rotations[idx]
         idx += 1
+
     return rotations

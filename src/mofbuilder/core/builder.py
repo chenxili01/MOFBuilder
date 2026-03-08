@@ -190,13 +190,16 @@ class MetalOrganicFrameworkBuilder:
         #need to be set by user
         self.supercell = [1, 1, 1]
         self.add_virtual_edge = False  #for bridge type node, add virtual edge to connect the bridge nodes
-        self.vir_edge_range = 0.5  # in fractional coordinate should be less
-        self.vir_edge_max_neighbor = 2
+        self.virtual_edge_range = 0.5  # in fractional coordinate should be less
+        self.virtual_edge_max_neighbor = 2
         self.supercell_custom_fbox = None
         #will be set
         self.eG_index_name_dict = None
         self.eG_matched_vnode_xind = None
         self.supercell_info = None
+        
+        #exception
+        self.node_com_type = None  #if set, will use the com of the node data to determine the node position, instead of the metal atom position. This is useful for some nodes with large coordination environment, where the metal atom position may not be the best representation of the node position.
 
         #defects
         #need to be set by user
@@ -325,6 +328,7 @@ class MetalOrganicFrameworkBuilder:
 
     def _read_linker(self):
         self.frame_linker.linker_connectivity = self.linker_connectivity
+        self.frame_linker._debug = self._debug
         if self.save_files:  #TODO: check if the target directory is set
             if self.linker_xyzfile is not None:
                 self.frame_linker.filename = self.linker_xyzfile
@@ -407,6 +411,8 @@ class MetalOrganicFrameworkBuilder:
                                                    self.ostream)[0]
         self.frame_nodes.filename = Path(nodes_database_path,
                                          selected_node_pdb_filename)
+        if self.node_com_type is not None:
+            self.frame_nodes.node_com_type = self.node_com_type
         self.frame_nodes.node_metal_type = self.node_metal
         self.frame_nodes.dummy_node = self.dummy_atom_node
         self.frame_nodes.create()
@@ -536,13 +542,15 @@ class MetalOrganicFrameworkBuilder:
 
         #virtual edge settings for bridge type nodes
         self.supercellbuilder.add_virtual_edge = self.add_virtual_edge
-        self.supercellbuilder.vir_edge_range = self.vir_edge_range
-        self.supercellbuilder.vir_edge_max_neighbor = self.vir_edge_max_neighbor
-        #self.supercellbuilder._debug = self._debug
+        self.supercellbuilder.virtual_edge_range = self.virtual_edge_range
+        self.supercellbuilder.virtual_edge_max_neighbor = self.virtual_edge_max_neighbor
+        self.supercellbuilder.sc_unit_cell = self.net_optimizer.sc_unit_cell
+        self.supercellbuilder._debug = self._debug
 
         self.supercellbuilder.build_supercellGraph()
         self.superG = self.supercellbuilder.superG
         self.supercell_info = self.supercellbuilder.superG_cell_info
+        
 
         #convert to edge graph
         self.edgegraphbuilder = EdgeGraphBuilder(comm=self.comm,
@@ -555,7 +563,7 @@ class MetalOrganicFrameworkBuilder:
         self.edgegraphbuilder.superG = self.supercellbuilder.superG
         self.edgegraphbuilder.linker_connectivity = self.linker_connectivity
         self.edgegraphbuilder.linker_frag_length = self.linker_frag_length
-        self.edgegraphbuilder.node_connectivity = self.node_connectivity + self.vir_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
+        self.edgegraphbuilder.node_connectivity = self.node_connectivity + self.virtual_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
         self.edgegraphbuilder.custom_fbox = self.supercell_custom_fbox
         self.edgegraphbuilder.sc_unit_cell = self.net_optimizer.sc_unit_cell
         self.edgegraphbuilder.supercell = self.supercell
@@ -606,7 +614,7 @@ class MetalOrganicFrameworkBuilder:
         self.framework.supercell_info = self.supercell_info
         self.framework.termination = self.termination
         self.framework.add_virtual_edge = self.add_virtual_edge
-        self.framework.virtual_edge_max_neighbor = self.vir_edge_max_neighbor
+        self.framework.virtual_edge_max_neighbor = self.virtual_edge_max_neighbor
         self.framework.sc_unit_cell = self.net_optimizer.sc_unit_cell
         self.framework.sc_unit_cell_inv = self.net_optimizer.sc_unit_cell_inv
         self.framework.termination_X_data = self.termination_X_data
@@ -627,7 +635,7 @@ class MetalOrganicFrameworkBuilder:
         self.defectgenerator.termination_Y_data = self.termination_Y_data
         self.defectgenerator.cleaved_eG = self.cleaved_eG.copy()
         self.defectgenerator.linker_connectivity = self.linker_connectivity
-        self.defectgenerator.node_connectivity = self.node_connectivity + self.vir_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
+        self.defectgenerator.node_connectivity = self.node_connectivity + self.virtual_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
         self.defectgenerator.eG_index_name_dict = self.edgegraphbuilder.eG_index_name_dict
         self.defectgenerator.eG_matched_vnode_xind = self.edgegraphbuilder.matched_vnode_xind
         self.defectgenerator.sc_unit_cell = self.net_optimizer.sc_unit_cell
