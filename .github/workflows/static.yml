@@ -1,8 +1,8 @@
-name: Try to Deploy Sphinx Docs to GitHub Pages
+name: Update Sphinx Docs to GitHub Pages
 
 on:
   push:
-    branches: ["master","main", "document"]
+    branches: ["master"]
   workflow_dispatch:
 
 permissions:
