@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mofbuilder"
+version = "0.1.0"
+description = "A Python toolkit for constructing and preparing MOF structures."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "LGPL-3.0-or-later" }
+authors = [
+  { name = "Chenxi Li", email = "chenxili@kth.se" },
+]
+keywords = ["mof", "metal-organic-framework", "materials", "chemistry", "simulation"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Chemistry",
+  "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+  "numpy>=1.23",
+  "networkx>=2.8",
+]
+
+[project.optional-dependencies]
+docs = [
+  "sphinx>=8",
+  "myst-parser>=4",
+  "sphinx-autodoc-typehints>=2",
+  "pydata-sphinx-theme>=0.16",
+]
+dev = [
+  "pytest>=7",
+  "pytest-cov>=4",
+  "black>=24",
+  "isort>=5",
+  "flake8>=7",
+]
+full = [
+  "veloxchem",
+  "mpi4py>=3.1",
+  "openmm>=8.0",
+  "rdkit",
+  "xtb-python",
+  "py3dmol",
+]
+
+[project.urls]
+Homepage = "https://github.com/chenxili01/MofBuilder"
+Repository = "https://github.com/chenxili01/MofBuilder"
+Documentation = "https://chenxili01.github.io/MOFBuilder/"
+Issues = "https://github.com/chenxili01/MofBuilder/issues"
+
+[project.scripts]
+mofbuilder = "mofbuilder.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
