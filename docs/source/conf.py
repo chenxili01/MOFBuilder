@@ -5,8 +5,10 @@ from __future__ import annotations
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
-sys.path.insert(0, os.path.abspath("../../src"))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
 
 project = "MOFBuilder"
 author = "Chenxi Li"
@@ -33,7 +35,6 @@ exclude_patterns = [
     "Thumbs.db",
     ".DS_Store",
     "generated/*",
-    #"api_generated/*",
 ]
 
 autosummary_generate = True

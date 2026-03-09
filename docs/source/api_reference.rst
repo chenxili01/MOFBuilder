@@ -1,36 +1,52 @@
 API Reference
 =============
 
-This reference is intentionally conservative for CI stability and only lists
-the documented public interface used in stable workflows.
+This section documents the curated public API. Each entry below links to a
+generated page with method/function details.
 
 Builder
 -------
 
-- ``mofbuilder.MetalOrganicFrameworkBuilder``
-- ``mofbuilder.core.Framework``
+.. autosummary::
+   :toctree: api_generated
+
+   mofbuilder.MetalOrganicFrameworkBuilder
+   mofbuilder.core.Framework
 
 Modelling and Simulation
 ------------------------
 
-- ``mofbuilder.md.OpenmmSetup``
-- ``mofbuilder.md.SolvationBuilder``
-- ``mofbuilder.md.LinkerForceFieldGenerator``
-- ``mofbuilder.md.GromacsForcefieldMerger``
-- ``mofbuilder.md.ForceFieldMapper``
+.. autosummary::
+   :toctree: api_generated
+
+   mofbuilder.md.OpenmmSetup
+   mofbuilder.md.SolvationBuilder
+   mofbuilder.md.LinkerForceFieldGenerator
+   mofbuilder.md.GromacsForcefieldMerger
+   mofbuilder.md.ForceFieldMapper
 
 Input and Output
 ----------------
 
-- ``mofbuilder.io.CifReader`` / ``mofbuilder.io.CifWriter``
-- ``mofbuilder.io.PdbReader`` / ``mofbuilder.io.PdbWriter``
-- ``mofbuilder.io.GroReader`` / ``mofbuilder.io.GroWriter``
-- ``mofbuilder.io.XyzReader`` / ``mofbuilder.io.XyzWriter``
+.. autosummary::
+   :toctree: api_generated
+
+   mofbuilder.io.CifReader
+   mofbuilder.io.CifWriter
+   mofbuilder.io.PdbReader
+   mofbuilder.io.PdbWriter
+   mofbuilder.io.GroReader
+   mofbuilder.io.GroWriter
+   mofbuilder.io.XyzReader
+   mofbuilder.io.XyzWriter
 
 Visualization
 -------------
 
-- ``mofbuilder.visualization.Viewer``
+.. autosummary::
+   :toctree: api_generated
+
+   mofbuilder.visualization.Viewer
 
 Note
 ----
