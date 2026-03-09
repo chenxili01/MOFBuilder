@@ -1,33 +1,31 @@
 # Installation
 
-## Clone and install from source
+MOFBuilder depends on several scientific packages distributed via conda,
+including VeloxChem, RDKit, OpenMM, and xtb-python.
 
-```bash
-git clone https://github.com/chenxili01/MofBuilder.git
-cd MofBuilder
-pip install -e .
-```
-
-## Recommended environment setup
+## 1. Create environment
 
 ```bash
 conda create -n mofbuilder python=3.10
 conda activate mofbuilder
 ```
 
-## Optional extras
+## 2. Install core scientific dependencies
 
 ```bash
-pip install -e ".[docs]"
-pip install -e ".[dev]"
-pip install -e ".[core,md,visualization]"
+conda install -c veloxchem -c conda-forge veloxchem ipykernel rdkit openmm xtb-python py3dmol
 ```
 
-## Build documentation
+## 3. Optional: ML potentials for OpenMM
 
 ```bash
-cd docs
-make html
+conda install -c conda-forge openmm-ml
 ```
 
-Generated pages are written to `docs/_build/html`.
+## 4. Install MOFBuilder from source
+
+```bash
+git clone https://github.com/chenxili01/MofBuilder.git
+cd MofBuilder
+pip install -e .
+```
