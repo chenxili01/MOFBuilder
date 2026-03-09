@@ -33,7 +33,7 @@ exclude_patterns = [
     "Thumbs.db",
     ".DS_Store",
     "generated/*",
-    "api_generated/*",
+    #"api_generated/*",
 ]
 
 autosummary_generate = True
