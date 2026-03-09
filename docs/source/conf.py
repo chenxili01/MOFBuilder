@@ -36,7 +36,7 @@ exclude_patterns = [
     "api_generated/*",
 ]
 
-autosummary_generate = False
+autosummary_generate = True
 autosummary_generate_overwrite = True
 autosummary_ignore_module_all = False
 autosummary_imported_members = False
