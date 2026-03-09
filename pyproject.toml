@@ -27,9 +27,12 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Chemistry",
   "Topic :: Scientific/Engineering :: Physics",
 ]
+
 dependencies = [
   "numpy>=1.23",
   "networkx>=2.8",
+  "scipy>=1.10",
+  "h5py>=3.8",
 ]
 
 [project.optional-dependencies]

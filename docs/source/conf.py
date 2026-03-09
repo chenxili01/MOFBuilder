@@ -62,6 +62,8 @@ autodoc_mock_imports = [
     "xtb",
     "py3Dmol",
     "py3dmol",
+    "scipy",
+    "h5py",
 ]
 napoleon_google_docstring = True
 napoleon_numpy_docstring = True
