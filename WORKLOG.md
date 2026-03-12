@@ -441,45 +441,154 @@ Use this exact field set for every checkpoint subsection.
 
 ### Checkpoint P4.0 — before coding
 
-- Date:
-- Thread / branch:
-- Status: pending
+- Date: 2026-03-12
+- Thread / branch: `codex_record`
+- Status: contract generated
 - Goal: consume graph role ids plus builder registries in optimizer logic
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Phase gate checked against `PLANS.md`: yes; Phase 4 remains limited to `src/mofbuilder/core/optimizer.py`, `src/mofbuilder/utils/geometry.py`, `tests/test_core_optimizer.py`, and planner logging in `WORKLOG.md` / `STATUS.md`, with supercell, writer, defects, framework, MD, builder API, and role-schema redesign work out of scope.
+- Files changed: `WORKLOG.md`, `STATUS.md`
+- Tests added: none
+- Tests run: none
+- Decisions: recorded the Phase 4 Phase Contract under `P4.0`; kept the execution boundary at optimizer consumption of graph role ids plus builder registries only; preserved the single-role numerical path and the current ditopic vs multitopic branch structure as locked Phase 4 constraints.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: `P4.1` — implementation
+
+**Phase Contract**
+
+- Phase name: `Phase 4 — Role-Aware Optimizer Inputs`
+
+**Goal**
+- Let placement/optimization consume per-role node and edge fragments.
+
+**Scope**
+- Replace the assumption of one global node fragment and one global edge fragment with role-based lookups.
+- Keep the current ditopic vs multitopic branch structure unless there is a clear need to refactor it later.
+- Preserve the single-role path as a fast/simple path.
+- Keep sorted nodes/edges in place, but make role annotations drive which fragment data is selected for each node/edge.
+- Keep legacy scalar fields working by normalizing into one-item registries.
+
+**Allowed Files**
+- `src/mofbuilder/core/optimizer.py`
+- `src/mofbuilder/utils/geometry.py`
+- `tests/test_core_optimizer.py`
+- `WORKLOG.md` for required phase logging only
+- `STATUS.md` for phase/checkpoint/status updates only
+
+**Forbidden Files**
+- All files outside the allowed list are out of scope for Phase 4.
+- Explicitly forbidden: `src/mofbuilder/core/builder.py`, `src/mofbuilder/core/moftoplibrary.py`, `src/mofbuilder/core/net.py`, `src/mofbuilder/io/cif_reader.py`, `src/mofbuilder/core/node.py`, `src/mofbuilder/core/linker.py`, `src/mofbuilder/core/termination.py`, `src/mofbuilder/core/supercell.py`, `src/mofbuilder/core/write.py`, `src/mofbuilder/core/defects.py`, `src/mofbuilder/core/framework.py`, `src/mofbuilder/md/`, `database/`, `PLANS.md`, `ARCHITECTURE.md`, `AGENTS.md`, and `CODEX_CONTEXT.md`.
+
+**Architecture Invariants**
+- Preserve the locked pipeline: `MofTopLibrary.fetch(...)` -> `FrameNet.create_net(...)` -> `MetalOrganicFrameworkBuilder.load_framework()` -> `MetalOrganicFrameworkBuilder.optimize_framework()` -> `MetalOrganicFrameworkBuilder.make_supercell()` -> `MetalOrganicFrameworkBuilder.build()`.
+- Preserve graph states `G`, `sG`, `superG`, `eG`, and `cleaved_eG`.
+- Do not rename these methods, reorder pipeline steps, merge pipeline stages, introduce new top-level pipeline stages, or move responsibilities between modules.
+- Keep responsibilities fixed: `FrameNet` owns topology graph construction and topology role annotation; `MofTopLibrary` owns topology family metadata; `MetalOrganicFrameworkBuilder` owns fragment normalization and runtime role registries; `Optimizer` owns node/linker placement; `Supercell` owns supercell expansion; `Writer / Framework` own merged structure output; `Defects` own defect operations; `MD modules` own simulation preparation.
+- Preserve the graph-centered architecture, staged build pipeline, topology-driven connectivity, and the rule that atomic coordinates are derived from optimized graph state.
+- Preserve the current single-role numerical path and keep the single-role case as the fast/simple path.
+- Keep the current ditopic vs multitopic branch structure unless a real Phase 4 conflict is recorded first.
+
+**Role Model Invariants**
+- Role identifiers are the only topology classification mechanism.
+- `node_role_id` must live on `FrameNet.G.nodes[n]["node_role_id"]`.
+- `edge_role_id` must live on `FrameNet.G.edges[e]["edge_role_id"]`.
+- Role identifiers must never be recomputed by downstream modules, replaced by local role maps, or inferred from chemistry.
+- Fragment registries must remain `node_role_registry` and `edge_role_registry`.
+- Optimizer logic must resolve fragment payloads through these registries rather than introducing competing role stores.
+- Phase 4 must consume the role ids and registry shapes established in Phases 1-3 without redesigning them.
+- Single-role normalization remains the backward-compatible base case: the optimizer must continue to work when builder inputs normalize to one-entry `node:default` / `edge:default` registries.
+
+**Required Tests**
+- `scripts/run_tests.sh tests/test_core_optimizer.py`
+- Regression tests proving current single-role optimizer behavior is unchanged.
+- One minimal heterogeneous multi-role runtime test at the optimizer boundary only; it must not require full writer or MD success.
+
+**Success Criteria**
+- The optimizer can place structures correctly when different node/edge roles use different fragment payloads.
+- Single-role numerical behavior remains unchanged.
+- Optimizer fragment selection is driven by graph role ids plus builder-owned registries rather than one global node payload and one global edge payload.
+- No supercell, edge-graph, writer, defects, framework, MD, public builder API, or role-schema redesign work is required to complete Phase 4.
+
+**Stop Rule**
+- Stop immediately if Phase 4 work requires editing any forbidden file or changing module responsibilities.
+- Stop immediately if satisfying the phase requires refactoring supercell or edge-graph logic, generalizing writer/defects/MD behavior, expanding the public builder API surface, or redesigning role ids or registry shapes introduced in Phases 1-3.
+- Stop immediately if the locked pipeline, graph-state names, or single-role numerical path would need to change.
+- If any schema, runtime, or invariant conflict is discovered, record it first in `WORKLOG.md` and `STATUS.md`, then stop before revising `PLANS.md`.
 
 ### Checkpoint P4.1 — implementation
 
-- Date:
-- Thread / branch:
-- Status: pending
-- Goal:
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Date: 2026-03-12
+- Thread / branch: `codex_record`
+- Status: complete
+- Goal: make optimizer resolve per-role node and edge fragment payloads while preserving the single-role scalar path
+- Phase gate checked against `PLANS.md`: yes; implementation stayed inside `src/mofbuilder/core/optimizer.py`, `tests/test_core_optimizer.py`, `WORKLOG.md`, and `STATUS.md` only, with no builder, supercell, writer, defects, framework, or MD edits.
+- Files changed: `src/mofbuilder/core/optimizer.py`, `tests/test_core_optimizer.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: `test_prepare_role_fragment_payloads_keeps_single_role_scalar_fallback`, `test_role_aware_optimizer_uses_role_registries_for_grouping_and_edge_payloads`
+- Tests run: `scripts/run_tests.sh tests/test_core_optimizer.py` (passed: 6 tests)
+- Decisions: added optional `node_role_registry` / `edge_role_registry` payload resolution directly inside `NetOptimizer` with legacy scalar `V_*` / `E_*` / `EC_*` fallback intact; made target edge lengths role-aware per edge without changing the optimizer stage boundary; split optimizer rotation groups by `node_role_id` when nodes share the same topology pname but carry different role payloads; kept the existing ditopic vs multitopic branch structure and left `src/mofbuilder/utils/geometry.py` unchanged because no geometry helper rewrite was required.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: `P4.2` — handoff
 
 ### Checkpoint P4.2 — handoff
 
-- Date:
-- Thread / branch:
-- Status: pending
+- Date: 2026-03-12
+- Thread / branch: `codex_record`
+- Status: complete
 - Goal: confirm optimizer supports minimal heterogeneous runtime behavior
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Phase gate checked against `PLANS.md`: yes; Phase 4 remained limited to optimizer/test/log files and did not modify builder wiring, role metadata, topology parsing, supercell, writer, defects, framework, or MD modules.
+- Files changed: `src/mofbuilder/core/optimizer.py`, `tests/test_core_optimizer.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: `test_prepare_role_fragment_payloads_keeps_single_role_scalar_fallback`, `test_role_aware_optimizer_uses_role_registries_for_grouping_and_edge_payloads`
+- Tests run: `scripts/run_tests.sh tests/test_core_optimizer.py` (passed: 6 tests)
+- Decisions: Phase 4 now lets optimizer-local logic select node and edge payloads from graph role ids plus Phase 3 registry entries when they are provided, while preserving the current single-role scalar fallback path; heterogeneous optimizer coverage now proves different role payloads can drive node grouping and edge placement at the optimizer boundary without expanding the public builder API or touching later pipeline stages.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: Phase 4 handoff complete; next checkpoint is `P5.0` in a new thread after reviewer acceptance.
+
+**Correction — 2026-03-13 Phase 4 review-fix reopen (before coding)**
+
+- Scope: reopen Phase 4 only for the missing runtime handoff from `MetalOrganicFrameworkBuilder.optimize_framework()` into `NetOptimizer`; allow the minimal `builder.py` edit required to pass `self.node_role_registry` and `self.edge_role_registry`, add one narrow integration regression that asserts the handoff, and update `WORKLOG.md` / `STATUS.md` only.
+- Invariants: preserve the locked pipeline `load_framework() -> optimize_framework() -> make_supercell()`, keep responsibilities fixed with the builder only supplying existing registries and the optimizer only consuming them, preserve current optimizer role-resolution logic and the single-role fallback path, and do not redesign builder architecture or role metadata.
+- Out-of-scope modules: `src/mofbuilder/core/optimizer.py`, `src/mofbuilder/utils/geometry.py`, supercell, writer, defects, framework, MD, metadata, topology parsing, database files, and all public API redesign remain out of scope unless the narrow handoff test exposes a real invariant conflict.
+- Tests run: none
+- Decisions: the prior Phase 4 contract was too narrow for the real runtime path because it forbade the builder wiring required to exercise the already-implemented optimizer registry support; the review-fix contract now permits only the builder-to-optimizer registry handoff and requires a direct `optimize_framework()` integration assertion rather than more optimizer-internal coverage.
+- Conflicts / blockers: review failure identified a runtime integration gap, not an optimizer role-model redesign need; `optimize_framework()` currently does not assign builder-owned registries to the `NetOptimizer` instance on the real path.
+- Handoff / next checkpoint: implement the minimal builder wiring and the narrow integration regression, then reopen `P4.2` for handoff with actual runtime-path verification.
+
+**Phase 4 Contract Addendum — Review-Fix Scope**
+
+- Goal: complete Phase 4 by wiring the existing builder-owned role registries into the real optimizer runtime path without changing the locked pipeline or expanding the phase beyond optimizer inputs.
+- Allowed Files: `src/mofbuilder/core/builder.py`, `tests/test_core_builder.py`, `WORKLOG.md`, `STATUS.md`.
+- Forbidden Files: all other files remain governed by the original `P4.0` contract and stay out of scope for this review fix; do not redesign `src/mofbuilder/core/optimizer.py` or reopen later-phase modules unless a real conflict is first recorded.
+- Required Change: `MetalOrganicFrameworkBuilder.optimize_framework()` may be modified only as needed to pass `self.node_role_registry` and `self.edge_role_registry` to the `NetOptimizer` instance used on the runtime path.
+- Required Tests: `scripts/run_tests.sh tests/test_core_builder.py`; add one narrow integration test that exercises `optimize_framework()` and asserts the `NetOptimizer` instance receives the builder's `node_role_registry` and `edge_role_registry`.
+- Success Criteria: the real `optimize_framework()` path hands the existing builder registries to `NetOptimizer`; no pipeline reordering, API expansion, role-registry redesign, or optimizer algorithm rewrite is introduced; the new integration test proves the runtime handoff directly.
+- Stop Rule: stop immediately if satisfying the review fix requires changes beyond the minimal builder handoff and narrow test boundary, changes module responsibilities, or requires redesigning optimizer behavior instead of supplying its existing inputs.
+
+**Correction — 2026-03-13 Phase 4 review-fix result**
+
+- Files changed: `src/mofbuilder/core/builder.py`, `tests/test_core_builder.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: `test_optimize_framework_passes_role_registries_to_optimizer`
+- Tests run: `scripts/run_tests.sh tests/test_core_builder.py` (passed: 5 tests; 5 existing `PytestUnknownMarkWarning` warnings for `pytest.mark.core`); `scripts/run_tests.sh tests/test_core_optimizer.py` (passed: 6 tests)
+- Decisions: kept the runtime fix inside the review-fix addendum by assigning `self.node_role_registry` and `self.edge_role_registry` onto the existing `NetOptimizer` instance at the start of `optimize_framework()`; added one narrow builder integration test that exercises the real `optimize_framework()` method while stubbing only the optimizer's heavy execution points and asserting the registry handoff before both optimizer stages run.
+- Conflicts / blockers: none; the missing runtime handoff is now closed without modifying optimizer logic or expanding the Phase 4 boundary.
+- Handoff / next checkpoint: Phase 4 review-fix is complete; next checkpoint remains `P5.0` in a new thread after reviewer acceptance.
+
+**Correction — 2026-03-13 Phase 4 final review-fix closure (before coding)**
+
+- Scope: replace the remaining too-narrow builder optimizer regression with one integration-style test that runs the real `load_framework() -> optimize_framework()` path, captures the actual `NetOptimizer` instance used by the builder, and proves the optimizer receives the builder-owned default-role registries on that runtime path.
+- Invariants: keep the locked pipeline unchanged, stub only external file/database/fragment boundaries, avoid manually seeding final builder state as a shortcut, keep `optimizer.py` untouched, and preserve default single-role normalization to `node:default` / `edge:default`.
+- Out-of-scope modules: `src/mofbuilder/core/optimizer.py`, `tests/test_core_optimizer.py`, and every source/test file outside `tests/test_core_builder.py` plus required logging files remain forbidden unless a real invariant conflict is first recorded.
+- Tests run: none
+- Decisions: the remaining reviewer issue is test coverage quality, not a new runtime bug in builder or optimizer wiring; the minimal fix is to exercise real builder orchestration through stubbed `MofTopLibrary`, `FrameNet`, `FrameLinker`, and `FrameNode` boundaries and assert registry identity on the optimizer methods actually invoked by `optimize_framework()`.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: update the builder integration regression, run `scripts/run_tests.sh tests/test_core_builder.py`, then record the final closure result.
+
+**Correction — 2026-03-13 Phase 4 final review-fix closure result**
+
+- Files changed: `tests/test_core_builder.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: none; replaced the narrow `test_optimize_framework_passes_role_registries_to_optimizer` coverage by extending the existing single-role builder integration test to cover `load_framework() -> optimize_framework()`
+- Tests run: `scripts/run_tests.sh tests/test_core_builder.py` (passed: 4 tests; 4 existing `PytestUnknownMarkWarning` warnings for `pytest.mark.core`)
+- Decisions: kept the fix strictly inside the allowed review-closure boundary by using the real builder orchestration path, stubbing only external topology/database/fragment loading boundaries, and capturing the actual `builder.net_optimizer` instance through its `rotation_and_cell_optimization()` and `place_edge_in_net()` calls; the test now proves that `load_framework()` creates the default-role registries and that `optimize_framework()` hands those exact registry objects, including `node:default` and `edge:default`, to the optimizer on the runtime path.
+- Conflicts / blockers: none; no `builder.py` or `optimizer.py` change was required for the final reviewer closure once the regression exercised the correct path.
+- Handoff / next checkpoint: Phase 4 final review-fix closure is complete; next checkpoint remains `P5.0` in a new thread after reviewer acceptance.
 
 ## Phase 5 — Role Propagation Through Supercell and Edge Graph
 

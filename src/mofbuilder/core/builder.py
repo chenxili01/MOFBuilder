@@ -615,6 +615,8 @@ class MetalOrganicFrameworkBuilder:
         self.net_optimizer.skip_rotation_optimization = self.skip_rotation_optimization
         self.net_optimizer.rotation_filename = self.rotation_filename  #file to save the optimized rotations
         self.net_optimizer.load_optimized_rotations = self.load_optimized_rotations  #h5 file with optimized rotations to load
+        self.net_optimizer.node_role_registry = self.node_role_registry
+        self.net_optimizer.edge_role_registry = self.edge_role_registry
         self.net_optimizer.G = self.G.copy()
         self.net_optimizer.cell_info = self.net_cell_info
         self.net_optimizer.V_data = self.frame_nodes.node_data

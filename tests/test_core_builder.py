@@ -251,7 +251,7 @@ def test_role_registries_consume_phase_two_metadata_without_local_role_maps():
 
 
 @pytest.mark.core
-def test_load_framework_single_role_keeps_scalar_state_and_populates_default_role_registries(
+def test_load_and_optimize_framework_single_role_keeps_scalar_state_and_passes_default_role_registries_to_optimizer(
     monkeypatch,
 ):
     builder = MetalOrganicFrameworkBuilder(mof_family="MOF-TEST")
@@ -325,6 +325,33 @@ def test_load_framework_single_role_keeps_scalar_state_and_populates_default_rol
         builder.frame_nodes.node_X_data = node_x_data
         builder.frame_nodes.dummy_node_split_dict = dummy_atom_node_dict
 
+    optimizer_calls = []
+    captured_optimizer = {}
+
+    def fake_rotation(self):
+        optimizer_calls.append("rotation")
+        captured_optimizer["instance"] = self
+        assert self.node_role_registry is builder.node_role_registry
+        assert self.edge_role_registry is builder.edge_role_registry
+        assert list(self.node_role_registry) == ["node:default"]
+        assert list(self.edge_role_registry) == ["edge:default"]
+        assert self.node_role_registry["node:default"]["node_data"] == node_data
+        assert self.edge_role_registry["edge:default"]["linker_center_data"] == (
+            linker_center_data
+        )
+        self.sG = self.G.copy()
+        self.optimized_cell_info = [11.0, 11.0, 11.0, 90.0, 90.0, 90.0]
+        self.sc_unit_cell = np.eye(3) * 11.0
+
+    def fake_place(self):
+        optimizer_calls.append("place")
+        captured_optimizer["instance"] = self
+        assert self.node_role_registry is builder.node_role_registry
+        assert self.edge_role_registry is builder.edge_role_registry
+        assert "node:default" in self.node_role_registry
+        assert "edge:default" in self.edge_role_registry
+        return self.sG
+
     monkeypatch.setattr(builder.mof_top_library, "fetch", fake_fetch)
     monkeypatch.setattr(builder.frame_net, "create_net", fake_create_net)
     monkeypatch.setattr(builder.frame_linker, "create", fake_linker_create)
@@ -333,6 +360,16 @@ def test_load_framework_single_role_keeps_scalar_state_and_populates_default_rol
         builder_module,
         "fetch_pdbfile",
         lambda *_args, **_kwargs: ["node_6c_Zr.pdb"],
+    )
+    monkeypatch.setattr(
+        builder.net_optimizer,
+        "rotation_and_cell_optimization",
+        MethodType(fake_rotation, builder.net_optimizer),
+    )
+    monkeypatch.setattr(
+        builder.net_optimizer,
+        "place_edge_in_net",
+        MethodType(fake_place, builder.net_optimizer),
     )
 
     builder.load_framework()
@@ -351,6 +388,9 @@ def test_load_framework_single_role_keeps_scalar_state_and_populates_default_rol
     assert builder.node_data == node_data
     assert builder.node_X_data == node_x_data
     assert builder.dummy_atom_node_dict == dummy_atom_node_dict
+    assert builder.G.nodes["V0"]["node_role_id"] == "node:default"
+    assert builder.G.nodes["V1"]["node_role_id"] == "node:default"
+    assert builder.G.edges["V0", "V1"]["edge_role_id"] == "edge:default"
 
     assert builder.node_role_registry == {
         "node:default": {
@@ -389,3 +429,15 @@ def test_load_framework_single_role_keeps_scalar_state_and_populates_default_rol
             "linker_fake_edge": False,
         }
     }
+
+    builder.optimize_framework()
+
+    assert optimizer_calls == ["rotation", "place"]
+    assert captured_optimizer["instance"] is builder.net_optimizer
+    assert builder.net_optimizer.node_role_registry is builder.node_role_registry
+    assert builder.net_optimizer.edge_role_registry is builder.edge_role_registry
+    assert list(builder.net_optimizer.node_role_registry) == ["node:default"]
+    assert list(builder.net_optimizer.edge_role_registry) == ["edge:default"]
+    assert builder.frame_cell_info == [11.0, 11.0, 11.0, 90.0, 90.0, 90.0]
+    assert np.array_equal(builder.frame_unit_cell, np.eye(3) * 11.0)
+    assert nx.is_isomorphic(builder.sG, builder.G)

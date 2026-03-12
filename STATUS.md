@@ -6,15 +6,15 @@ latest active checkpoint in `WORKLOG.md`.
 ## Current State
 
 - Roadmap: `PLANS.md` is frozen
-- Phase: Phase 3 — Builder Input Normalization and Role Registries
-- Checkpoint: `P3.2` — review-fix complete
+- Phase: Phase 4 — Role-Aware Optimizer Inputs
+- Checkpoint: `P4.2` — final review-fix closure complete
 - Status: complete
 - Active thread / branch: `codex_record`
-- Next step: reviewer acceptance, then `P4.0` in a new thread
-- Last completed checkpoint: `P3.2`
-- Blocking conflict: none recorded
-- Verification: `scripts/run_tests.sh tests/test_core_builder.py` passed (4 tests; existing `PytestUnknownMarkWarning` warnings only)
-- Last update: 2026-03-12
+- Next step: await reviewer acceptance for Phase 4 handoff; if accepted, start `P5.0` in a new thread
+- Last completed checkpoint: `P4.2`
+- Blocking conflict: none
+- Verification: `scripts/run_tests.sh tests/test_core_builder.py` passed (4 tests, 4 existing `PytestUnknownMarkWarning` warnings for `pytest.mark.core`)
+- Last update: 2026-03-13
 
 ## Rules
 
