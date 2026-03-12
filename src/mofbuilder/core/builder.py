@@ -141,6 +141,11 @@ class MetalOrganicFrameworkBuilder:
         self.net_sorted_nodes = None
         self.net_sorted_edges = None
         self.net_pair_vertex_edge = None
+        self.role_metadata = None
+        self.node_role_specs = {}
+        self.edge_role_specs = {}
+        self.node_role_registry = {}
+        self.edge_role_registry = {}
 
         #need to be set by user
         self.linker_xyzfile = None  #can be set directly
@@ -295,6 +300,124 @@ class MetalOrganicFrameworkBuilder:
             self.ostream.print_warning("No solvents found.")
             self.ostream.flush()
 
+    def _build_role_spec_map(
+        self,
+        role_entries,
+        *,
+        default_role_id,
+        connectivity_key,
+        default_connectivity,
+    ):
+        if role_entries:
+            return {
+                str(entry["role_id"]): {
+                    "role_id": str(entry["role_id"]),
+                    connectivity_key: int(entry[connectivity_key]),
+                    "topology_labels": list(entry.get("topology_labels", [])),
+                }
+                for entry in role_entries
+            }
+
+        if default_connectivity is None:
+            return {}
+
+        return {
+            default_role_id: {
+                "role_id": default_role_id,
+                connectivity_key: int(default_connectivity),
+                "topology_labels": [],
+            }
+        }
+
+    def _get_linker_fragment_source(self):
+        if self.linker_molecule is not None:
+            return {"kind": "molecule", "value": self.linker_molecule}
+        if self.linker_smiles is not None:
+            return {"kind": "smiles", "value": self.linker_smiles}
+        if self.linker_xyzfile is not None:
+            return {"kind": "xyzfile", "value": self.linker_xyzfile}
+        return {"kind": None, "value": None}
+
+    def _initialize_role_registries(self):
+        self.role_metadata = self.mof_top_library.role_metadata
+        metadata = self.role_metadata or {}
+
+        self.node_role_specs = self._build_role_spec_map(
+            metadata.get("node_roles"),
+            default_role_id="node:default",
+            connectivity_key="expected_connectivity",
+            default_connectivity=self.node_connectivity,
+        )
+        self.edge_role_specs = self._build_role_spec_map(
+            metadata.get("edge_roles"),
+            default_role_id="edge:default",
+            connectivity_key="linker_connectivity",
+            default_connectivity=self.linker_connectivity,
+        )
+
+        self.node_role_registry = {}
+        for role_id, spec in self.node_role_specs.items():
+            keywords = [f"{spec['expected_connectivity']}c"]
+            if self.node_metal is not None:
+                keywords.append(self.node_metal)
+            self.node_role_registry[role_id] = {
+                "role_id": role_id,
+                "expected_connectivity": spec["expected_connectivity"],
+                "topology_labels": list(spec["topology_labels"]),
+                "node_metal": self.node_metal,
+                "dummy_atom_node": self.dummy_atom_node,
+                "fragment_source": {
+                    "kind": "database",
+                    "keywords": keywords,
+                    "exclude_keywords": ["dummy"],
+                },
+                "filename": None,
+                "node_data": None,
+                "node_X_data": None,
+                "dummy_atom_node_dict": None,
+            }
+
+        linker_source = self._get_linker_fragment_source()
+        self.edge_role_registry = {}
+        for role_id, spec in self.edge_role_specs.items():
+            self.edge_role_registry[role_id] = {
+                "role_id": role_id,
+                "linker_connectivity": spec["linker_connectivity"],
+                "topology_labels": list(spec["topology_labels"]),
+                "fragment_source": dict(linker_source),
+                "linker_charge": self.linker_charge,
+                "linker_multiplicity": self.linker_multiplicity,
+                "linker_center_data": None,
+                "linker_center_X_data": None,
+                "linker_outer_data": None,
+                "linker_outer_X_data": None,
+                "linker_frag_length": None,
+                "linker_fake_edge": False,
+            }
+
+    def _update_node_role_registry_data(self):
+        for role_entry in self.node_role_registry.values():
+            if role_entry["expected_connectivity"] != self.node_connectivity:
+                continue
+            role_entry["filename"] = str(
+                self.frame_nodes.filename) if self.frame_nodes.filename is not None else None
+            role_entry["node_data"] = self.node_data
+            role_entry["node_X_data"] = self.node_X_data
+            role_entry["dummy_atom_node_dict"] = self.dummy_atom_node_dict
+
+    def _update_edge_role_registry_data(self):
+        # Preserve the current scalar fast path by only filling roles that match
+        # the globally selected linker connectivity in this phase.
+        for role_entry in self.edge_role_registry.values():
+            if role_entry["linker_connectivity"] != self.linker_connectivity:
+                continue
+            role_entry["linker_center_data"] = self.linker_center_data
+            role_entry["linker_center_X_data"] = self.linker_center_X_data
+            role_entry["linker_outer_data"] = self.linker_outer_data
+            role_entry["linker_outer_X_data"] = self.linker_outer_X_data
+            role_entry["linker_frag_length"] = self.linker_frag_length
+            role_entry["linker_fake_edge"] = self.linker_fake_edge
+
     def _read_net(self):
         if self.data_path is None:
             self.data_path = get_data_path()
@@ -322,6 +445,7 @@ class MetalOrganicFrameworkBuilder:
         self.net_sorted_nodes = self.frame_net.sorted_nodes
         self.net_sorted_edges = self.frame_net.sorted_edges
         self.net_pair_vertex_edge = self.frame_net.pair_vertex_edge
+        self._initialize_role_registries()
 
     def _read_linker(self):
         self.frame_linker.linker_connectivity = self.linker_connectivity
@@ -390,6 +514,7 @@ class MetalOrganicFrameworkBuilder:
         if self.frame_linker.fake_edge:
             self.linker_frag_length = 0.0
             self.linker_fake_edge = self.frame_linker.fake_edge
+        self._update_edge_role_registry_data()
 
     def _read_node(self):
         assert_msg_critical(self.node_connectivity is not None,
@@ -415,6 +540,7 @@ class MetalOrganicFrameworkBuilder:
         self.node_data = self.frame_nodes.node_data
         self.node_X_data = self.frame_nodes.node_X_data
         self.dummy_atom_node_dict = self.frame_nodes.dummy_node_split_dict
+        self._update_node_role_registry_data()
 
     def _read_termination(self):
         if not self.termination:

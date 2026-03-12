@@ -308,45 +308,129 @@ Use this exact field set for every checkpoint subsection.
 
 ### Checkpoint P3.0 — before coding
 
-- Date:
-- Thread / branch:
-- Status: pending
+- Date: 2026-03-12
+- Thread / branch: `codex_record`
+- Status: complete
 - Goal: normalize scalar inputs into one-entry role registries
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Phase gate checked against `PLANS.md`: yes; Phase 3 remains limited to `src/mofbuilder/core/builder.py`, `tests/test_core_builder.py`, and planner logging in `WORKLOG.md` / `STATUS.md`, with metadata-schema changes and optimizer/supercell/writer/defects/framework/MD changes out of scope.
+- Files changed: `WORKLOG.md`, `STATUS.md`
+- Tests added: none
+- Tests run: none
+- Decisions: recorded the Phase 3 Phase Contract under `P3.0`; kept the execution boundary at builder-owned normalization and runtime role registries only; preserved legacy scalar builder inputs as the required single-role shorthand and left the Phase 2 metadata shape untouched.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: `P3.1` — implementation
+
+**Phase Contract**
+
+- Phase name: `Phase 3 — Builder Input Normalization and Role Registries`
+
+**Goal**
+- Make the builder internally role-aware while preserving current public scalar inputs for the single-role case.
+
+**Scope**
+- Add normalized internal structures such as:
+  - node-role specs
+  - edge-role specs
+  - role -> fragment cache/data maps
+- Keep existing fields such as `node_metal`, `linker_smiles`, `linker_xyzfile`, `linker_molecule`, and `termination_name` as shorthand for the default single-role path.
+- Preserve `load_framework() -> optimize_framework() -> make_supercell()`.
+- Do not generalize `FrameNode` and `FrameLinker` into multi-role managers if they can stay single-fragment processors instantiated per role.
+- Do not redesign metadata schema here; consume the canonical metadata produced by Phase 2.
+
+**Allowed Files**
+- `src/mofbuilder/core/builder.py`
+- `tests/test_core_builder.py`
+- `WORKLOG.md` for required phase logging only
+- `STATUS.md` for phase/checkpoint/status updates only
+
+**Forbidden Files**
+- All files outside the allowed list are out of scope for Phase 3.
+- Explicitly forbidden: `src/mofbuilder/core/moftoplibrary.py`, `src/mofbuilder/core/net.py`, `src/mofbuilder/io/cif_reader.py`, `src/mofbuilder/core/node.py`, `src/mofbuilder/core/linker.py`, `src/mofbuilder/core/termination.py`, `src/mofbuilder/core/optimizer.py`, `src/mofbuilder/core/supercell.py`, `src/mofbuilder/core/write.py`, `src/mofbuilder/core/defects.py`, `src/mofbuilder/core/framework.py`, `src/mofbuilder/md/`, `database/`, `PLANS.md`, `ARCHITECTURE.md`, `AGENTS.md`, and `CODEX_CONTEXT.md`.
+
+**Architecture Invariants**
+- Preserve the locked pipeline: `MofTopLibrary.fetch(...)` -> `FrameNet.create_net(...)` -> `MetalOrganicFrameworkBuilder.load_framework()` -> `MetalOrganicFrameworkBuilder.optimize_framework()` -> `MetalOrganicFrameworkBuilder.make_supercell()` -> `MetalOrganicFrameworkBuilder.build()`.
+- Preserve graph states `G`, `sG`, `superG`, `eG`, and `cleaved_eG`.
+- Do not rename these methods, reorder pipeline steps, merge pipeline stages, introduce new top-level pipeline stages, or move responsibilities between modules.
+- Keep responsibilities fixed: `FrameNet` owns topology graph construction and topology role annotation; `MofTopLibrary` owns topology family metadata; `MetalOrganicFrameworkBuilder` owns fragment normalization and runtime role registries; `Optimizer` owns node/linker placement; `Supercell` owns supercell expansion; `Writer / Framework` own merged structure output; `Defects` own defect operations; `MD modules` own simulation preparation.
+- Preserve the graph-centered architecture, staged build pipeline, topology-driven connectivity, and the rule that atomic coordinates are derived from optimized graph state.
+- Keep single-role builds as the fast path and avoid introducing significant overhead when only one role exists.
+- Preserve current public scalar builder inputs as the single-role shorthand and keep the existing `load_framework() -> optimize_framework() -> make_supercell()` orchestration intact.
+
+**Role Model Invariants**
+- Role identifiers are the only topology classification mechanism.
+- `node_role_id` must live on `FrameNet.G.nodes[n]["node_role_id"]`.
+- `edge_role_id` must live on `FrameNet.G.edges[e]["edge_role_id"]`.
+- Role identifiers must never be recomputed by downstream modules, replaced by local role maps, or inferred from chemistry.
+- Fragment registries must remain `node_role_registry` and `edge_role_registry`.
+- Modules consuming roles must resolve fragment payloads through these registries.
+- `MetalOrganicFrameworkBuilder` may normalize legacy scalar inputs into registries, but it must consume the canonical metadata produced by Phase 2 rather than redesigning metadata shape or ownership.
+- Single-role normalization remains the backward-compatible base case: scalar builder inputs must normalize to one-entry `node:default` / `edge:default` registries.
+
+**Required Tests**
+- `scripts/run_tests.sh tests/test_core_builder.py`
+- Regression tests proving the current single-role builder inputs still behave the same.
+- Explicit normalization tests showing scalar builder inputs become one-entry `node:default` / `edge:default` registries.
+
+**Success Criteria**
+- The builder can carry role-aware fragment specs internally.
+- Single-role builds still use the current scalar attributes unchanged.
+- Legacy scalar inputs normalize into builder-owned runtime role registries without changing public shorthand behavior.
+- The builder consumes the canonical metadata produced by Phase 2 without redesigning that metadata format.
+- No optimizer, supercell, writer, defects, framework, MD, topology-parsing, or bundled-database change is required to complete Phase 3.
+
+**Stop Rule**
+- Stop immediately if Phase 3 work requires editing any forbidden file or changing module responsibilities.
+- Stop immediately if satisfying the phase requires changing the Phase 2 metadata format, modifying optimizer placement logic, modifying supercell/writer/defects/framework/MD code, or generalizing helper objects outside builder-owned normalization and registry setup.
+- Stop immediately if the work would remove or rename current scalar builder inputs, redesign role ids or registry ownership, infer roles from chemistry, or introduce competing local role maps.
+- Stop immediately if the locked pipeline, graph-state names, public APIs, or single-role fast path would need to change.
+- If any schema, runtime, or invariant conflict is discovered, record it first in `WORKLOG.md` and `STATUS.md`, then stop before revising `PLANS.md`.
 
 ### Checkpoint P3.1 — implementation
 
-- Date:
-- Thread / branch:
-- Status: pending
-- Goal:
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Date: 2026-03-12
+- Thread / branch: `codex_record`
+- Status: complete
+- Goal: normalize scalar builder inputs into builder-owned role specs and runtime registries while preserving the existing single-role build path
+- Phase gate checked against `PLANS.md`: yes; implementation stayed inside `src/mofbuilder/core/builder.py`, `tests/test_core_builder.py`, `WORKLOG.md`, and `STATUS.md` only.
+- Files changed: `src/mofbuilder/core/builder.py`, `tests/test_core_builder.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: `test_initialize_role_registries_normalizes_scalar_inputs_to_default_roles`, `test_role_registries_consume_phase_two_metadata_without_local_role_maps`
+- Tests run: `scripts/run_tests.sh tests/test_core_builder.py` (passed: 3 tests; existing `pytest.mark.core` warnings only)
+- Decisions: added builder-owned `role_metadata`, `node_role_specs`, `edge_role_specs`, `node_role_registry`, and `edge_role_registry`; normalized families without metadata to one-entry `node:default` / `edge:default` registries; consumed Phase 2 canonical role metadata verbatim when present; preserved the scalar fast path by populating registry fragment data only for roles matching the current globally selected node/linker connectivity in this phase.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: `P3.2` — handoff
 
 ### Checkpoint P3.2 — handoff
 
-- Date:
-- Thread / branch:
-- Status: pending
+- Date: 2026-03-12
+- Thread / branch: `codex_record`
+- Status: complete
 - Goal: confirm builder-owned registries are ready for optimizer consumption
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Phase gate checked against `PLANS.md`: yes; Phase 3 remained limited to builder-owned normalization and matching tests, with no optimizer/supercell/writer/defects/framework/MD/topology/database changes.
+- Files changed: `src/mofbuilder/core/builder.py`, `tests/test_core_builder.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: `test_initialize_role_registries_normalizes_scalar_inputs_to_default_roles`, `test_role_registries_consume_phase_two_metadata_without_local_role_maps`
+- Tests run: `scripts/run_tests.sh tests/test_core_builder.py` (passed: 3 tests; existing `pytest.mark.core` warnings only)
+- Decisions: Phase 3 now gives `MetalOrganicFrameworkBuilder` canonical builder-owned role specs and registries derived from Phase 2 metadata or default-role normalization, while keeping current scalar inputs and the single-role build orchestration unchanged; registry payloads are ready for later optimizer consumption without introducing competing local role maps.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: Phase 3 handoff complete; next checkpoint is `P4.0` in a new thread after reviewer acceptance.
+
+**Correction — 2026-03-12 Phase 3 reviewer request preflight**
+
+- Scope: add one narrow regression test in `tests/test_core_builder.py` that calls the real `load_framework()` single-role path and update `WORKLOG.md` / `STATUS.md` only.
+- Invariants: keep Phase 3 inside the builder-test boundary, preserve the scalar single-role shorthand, keep `node:default` / `edge:default` as the only single-role registry entries, and avoid source edits unless the test reveals a real builder defect.
+- Out-of-scope modules: all source files, including `src/mofbuilder/core/builder.py`, remain unchanged unless the requested regression test exposes a real Phase 3 defect; all Phase 3 forbidden modules remain out of scope.
+- Tests run: none
+- Decisions: exercise the real builder code by stubbing only boundary calls at `MofTopLibrary.fetch(...)`, `FrameNet.create_net(...)`, `FrameLinker.create(...)`, `FrameNode.create(...)`, and `fetch_pdbfile(...)`.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: add the regression test, run `scripts/run_tests.sh tests/test_core_builder.py`, then record the review-fix result.
+
+**Correction — 2026-03-12 Phase 3 reviewer request result**
+
+- Files changed: `tests/test_core_builder.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: `test_load_framework_single_role_keeps_scalar_state_and_populates_default_role_registries`
+- Tests run: `scripts/run_tests.sh tests/test_core_builder.py` (passed: 4 tests; 4 existing `PytestUnknownMarkWarning` warnings for `pytest.mark.core`)
+- Decisions: added one narrow regression that calls the real `load_framework()` path while stubbing only external file/dependency boundaries; confirmed the single-role scalar builder state still populates the legacy fields and that `node_role_registry` / `edge_role_registry` each contain exactly one default-role entry with the `_update_node_role_registry_data()` / `_update_edge_role_registry_data()` payloads reflected there.
+- Conflicts / blockers: none; the reviewer request did not expose a Phase 3 builder defect.
+- Handoff / next checkpoint: Phase 3 handoff remains complete with the requested regression coverage added; next checkpoint remains `P4.0` in a new thread after reviewer acceptance.
 
 ## Phase 4 — Role-Aware Optimizer Inputs
 
