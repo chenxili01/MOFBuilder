@@ -8,9 +8,9 @@ latest active checkpoint in `WORKLOG.md`.
 - Roadmap: `PLANS.md` is frozen
 - Current phase: Phase 1 — Role-Safe Topology Parsing
 - Current checkpoint: `P1.0` — before coding
-- Current status: not started
+- Current status: contract generated
 - Active thread / branch:
-- Next action: start Phase 1 only, then update `WORKLOG.md` under `P1.0`
+- Next action: implementation
 - Last completed checkpoint: none
 - Blocking conflict: none recorded
 - Last update: 2026-03-12

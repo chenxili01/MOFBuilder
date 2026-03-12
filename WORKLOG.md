@@ -47,17 +47,81 @@ Use this exact field set for every checkpoint subsection.
 
 ### Checkpoint P1.0 — before coding
 
-- Date:
-- Thread / branch:
-- Status: pending
+- Date: 2026-03-12
+- Thread / branch: `codex_record`
+- Status: complete
 - Goal: add stable graph role annotations without changing higher layers
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Phase gate checked against `PLANS.md`: yes; Phase 1 remains limited to topology parsing in `src/mofbuilder/io/cif_reader.py`, `src/mofbuilder/core/net.py`, and matching tests only.
+- Files changed: `WORKLOG.md`, `STATUS.md`
+- Tests added: none
+- Tests run: none
+- Decisions: recorded the Phase Contract under `P1.0`; preserved the locked architecture, role-model invariants, and the Phase 1 execution boundary from `PLANS.md`.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: `P1.1` — implementation
+
+**Phase Contract**
+
+- Phase name: `Phase 1 — Role-Safe Topology Parsing`
+
+**Goal**
+- Add internal role annotations at the topology/CIF parsing layer without changing the locked MOFBuilder pipeline or current single-role behavior.
+
+**Scope**
+- Preserve raw site-label detail needed to distinguish topology node and edge roles during CIF parsing.
+- Prevent premature role-label collapse inside [cif_reader.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/io/cif_reader.py).
+- Attach deterministic `node_role_id` and `edge_role_id` metadata to `FrameNet.G` in [net.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/net.py).
+- Preserve existing single-role scalar outputs from `FrameNet`: `linker_connectivity`, `max_degree`, `sorted_nodes`, and `sorted_edges`.
+- Keep the change topology-only; higher layers may ignore the new annotations in this phase.
+
+**Allowed Files**
+- [cif_reader.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/io/cif_reader.py)
+- [net.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/net.py)
+- [test_io_reader.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_io_reader.py)
+- [test_core_net.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_net.py)
+- [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) for required phase logging only
+- [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) for phase/checkpoint/status updates only
+
+**Forbidden Files**
+- All files outside the allowed list are out of scope for Phase 1.
+- Explicitly forbidden: [moftoplibrary.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/moftoplibrary.py), [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py), [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py), [supercell.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/supercell.py), [write.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/write.py), [defects.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/defects.py), [framework.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/framework.py), [src/mofbuilder/md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/md), [database](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/database), [PLANS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/PLANS.md) unless a real conflict is first recorded, [ARCHITECTURE.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/ARCHITECTURE.md), [AGENTS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/AGENTS.md), [README.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/README.md), and [docs](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/docs)
+
+**Architecture Invariants**
+- Preserve the locked pipeline: `MofTopLibrary.fetch(...)` -> `FrameNet.create_net(...)` -> `MetalOrganicFrameworkBuilder.load_framework()` -> `MetalOrganicFrameworkBuilder.optimize_framework()` -> `MetalOrganicFrameworkBuilder.make_supercell()` -> `MetalOrganicFrameworkBuilder.build()`.
+- Preserve graph states `G`, `sG`, `superG`, `eG`, and `cleaved_eG`.
+- Do not rename, reorder, merge, or add pipeline stages.
+- Keep responsibilities fixed: `FrameNet` owns topology graph construction and topology role annotation; downstream modules remain unchanged in this phase.
+- Preserve graph-centered architecture, existing geometry and coordinate conventions, and the single-role template path as the base case.
+- Do not change public builder/framework/package/CLI APIs or bundled database formats.
+
+**Role Model Invariants**
+- Topology role identifiers are the only topology classification mechanism.
+- `node_role_id` must live on `FrameNet.G.nodes[n]["node_role_id"]`.
+- `edge_role_id` must live on `FrameNet.G.edges[e]["edge_role_id"]`.
+- Role ids must be stable and deterministic for the same template input.
+- Role ids must not be inferred from chemistry, recomputed downstream, or replaced by local role maps.
+- Fragment registries remain `node_role_registry` and `edge_role_registry`; Phase 1 must not introduce alternate role stores or fragment-assignment paths.
+- Single-role templates must remain compatible with the canonical default-role base case rather than inventing a new single-role convention.
+
+**Required Tests**
+- Update and pass the relevant CIF-reader coverage in [test_io_reader.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_io_reader.py).
+- Update and pass the relevant topology parsing coverage in [test_core_net.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_net.py).
+- Add explicit single-role regression coverage proving current single-role CIF parsing still yields the same `linker_connectivity`, `max_degree`, `sorted_nodes`, and `sorted_edges`.
+- Add one minimal topology-only heterogeneous-role test proving distinct role labels survive parsing and appear on `FrameNet.G` as `node_role_id` and `edge_role_id`.
+
+**Success Criteria**
+- Single-role templates behave exactly as before at the current public and scalar topology outputs.
+- [cif_reader.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/io/cif_reader.py) preserves enough raw topology label detail to support role-safe parsing.
+- [net.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/net.py) emits stable per-node and per-edge role annotations on `G`.
+- Repeated parsing of the same topology produces the same role ids.
+- Higher layers continue to function without consuming the new role annotations.
+- No architecture lock, role-model invariant, or database schema is changed.
+
+**Stop Rule**
+- Stop immediately if Phase 1 work requires editing any forbidden file or changing module responsibilities.
+- Stop immediately if satisfying the phase requires changes to `MofTopLibrary`, builder inputs or runtime behavior, optimizer, supercell, writer, defects, framework, CLI, MD code, or bundled database schema.
+- Stop immediately if the implementation would infer chemistry from role labels, add fragment-assignment logic, or redesign graph APIs beyond attaching stable role annotations.
+- Stop immediately if the locked pipeline, graph-state names, or public APIs would need to change.
+- If any schema, runtime, or invariant conflict is discovered, record it first in [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) and [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md), then stop before revising [PLANS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/PLANS.md).
 
 ### Checkpoint P1.1 — implementation
 

@@ -476,6 +476,28 @@ stop rule
 
 Implementation must remain inside the contract boundary.
 
+
+## Planner Scope Rule
+
+The planner is planning-only.
+
+The planner may:
+- read all control documents
+- generate a Phase Contract
+- update `WORKLOG.md`
+- update `STATUS.md`
+
+The planner must not:
+- modify source code
+- modify tests
+- modify `PLANS.md`
+- modify `ARCHITECTURE.md`
+- modify `CODEX_CONTEXT.md`
+- modify `AGENTS.md`
+
+Planner output should be limited to phase scope, invariants, allowed files,
+forbidden files, required tests, success criteria, and stop rules.
+
 Before coding, always summarize:
 
 1. the goal
