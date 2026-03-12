@@ -1,37 +1,41 @@
 # WORKLOG.md
 
 Use this file as the execution log for the multi-role topology effort.
-Keep it aligned with `PLANS.md`. Do not use it to redefine phase scope.
+Keep it aligned with `PLANS.md`. Use `STATUS.md` as the live dashboard and this
+file as the append-only history.
 
 ## Rules
 
+- `PLANS.md` is the frozen roadmap. Do not use this file to redefine phase
+  scope.
 - One Codex thread should usually touch one phase only.
 - Append facts; do not rewrite completed entries except to add a clearly marked
   correction.
-- Log only concrete execution details: files changed, tests added/run, result,
-  blockers, and handoff notes.
+- Update the matching checkpoint before starting work and again at handoff.
+- Record only execution details: files changed, tests added/run, decisions,
+  blockers, and the next checkpoint.
 - If implementation reveals a conflict with `PLANS.md`, graph invariants, or
-  the canonical role model, stop and record the conflict before changing the
-  plan.
+  the canonical role model, stop and record the conflict here and in
+  `STATUS.md` before changing the plan.
 - Keep single-role behavior as the default/base case in every phase entry.
 
-## Reusable Checkpoint Template
+## Exact Checkpoint Template
 
-Copy this subsection shape when adding a new checkpoint under a phase.
+Use this exact field set for every checkpoint subsection.
 
 ### Checkpoint PX.Y — title
 
 - Date:
 - Thread / branch:
+- Status: pending / in progress / complete / blocked
 - Goal:
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - passed / partial / blocked
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ## Phase 1 — Role-Safe Topology Parsing
 
@@ -45,43 +49,43 @@ Copy this subsection shape when adding a new checkpoint under a phase.
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: add stable graph role annotations without changing higher layers
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P1.1 — implementation
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal:
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P1.2 — handoff
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: confirm Phase 1 exit criteria and next-phase handoff
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ## Phase 2 — Additive Family/Template Role Metadata
 
@@ -94,43 +98,43 @@ Copy this subsection shape when adding a new checkpoint under a phase.
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: define one additive metadata path and passive normalized accessors
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P2.1 — implementation
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal:
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P2.2 — handoff
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: confirm metadata schema is stable enough for builder normalization
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ## Phase 3 — Builder Input Normalization and Role Registries
 
@@ -142,43 +146,43 @@ Copy this subsection shape when adding a new checkpoint under a phase.
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: normalize scalar inputs into one-entry role registries
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P3.1 — implementation
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal:
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P3.2 — handoff
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: confirm builder-owned registries are ready for optimizer consumption
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ## Phase 4 — Role-Aware Optimizer Inputs
 
@@ -191,43 +195,43 @@ Copy this subsection shape when adding a new checkpoint under a phase.
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: consume graph role ids plus builder registries in optimizer logic
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P4.1 — implementation
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal:
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P4.2 — handoff
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: confirm optimizer supports minimal heterogeneous runtime behavior
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ## Phase 5 — Role Propagation Through Supercell and Edge Graph
 
@@ -239,43 +243,43 @@ Copy this subsection shape when adding a new checkpoint under a phase.
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: preserve role ids through `superG`, `eG`, and `cleaved_eG`
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P5.1 — implementation
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal:
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P5.2 — handoff
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: confirm downstream phases can consume propagated role metadata
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ## Phase 6 — Role-Aware Writer and Defect Metadata
 
@@ -290,44 +294,44 @@ Copy this subsection shape when adding a new checkpoint under a phase.
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: generalize merged-data and defect paths to consume role-specific node
   metadata
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P6.1 — implementation
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal:
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P6.2 — handoff
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: confirm writer/defect paths are stable before MD generalization
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ## Phase 7 — Multi-Edge Force-Field and Simulation-Prep Support
 
@@ -341,49 +345,49 @@ Copy this subsection shape when adding a new checkpoint under a phase.
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: support multiple edge-role force-field paths at the currently supported
   level
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P7.1 — implementation
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal:
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P7.2 — handoff
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: confirm minimal heterogeneous multi-edge MD-prep support only
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ## Phase 8 — Documentation and Example Sync
 
-- Scope anchor: `README.md`, `docs/source/manual/*.md`,
-  `ARCHITECTURE.md`, `CODEX_CONTEXT.md`, `AGENTS.md`
+- Scope anchor: `README.md`, `docs/source/manual/*.md`, `ARCHITECTURE.md`,
+  `CODEX_CONTEXT.md`, `AGENTS.md`
 - Must preserve: implemented behavior, not aspirational behavior
 - Must not yet: mix documentation updates with new algorithmic refactors
 
@@ -391,40 +395,40 @@ Copy this subsection shape when adding a new checkpoint under a phase.
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: sync docs to the implemented multi-role model and verified limits
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P8.1 — implementation
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal:
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:
 
 ### Checkpoint P8.2 — handoff
 
 - Date:
 - Thread / branch:
+- Status: pending
 - Goal: confirm docs match code and known limitations
+- Phase gate checked against `PLANS.md`:
 - Files changed:
 - Tests added:
 - Tests run:
-- Result:
-  - pending
 - Decisions:
-- Risks / blockers:
-- Handoff:
+- Conflicts / blockers:
+- Handoff / next checkpoint:

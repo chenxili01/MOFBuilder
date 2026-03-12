@@ -112,6 +112,21 @@ Important public surfaces:
 - When editing `MOF_topology_dict` consumers, preserve the expected columns:
   MOF family, node connectivity, metal, linker topic, topology stem
 
+## Phased Execution Rules
+
+- Treat `PLANS.md` as the frozen execution roadmap for the multi-role effort.
+  Do not edit it unless a real schema/runtime/invariant conflict is discovered.
+- Work one phase at a time. Do not combine non-adjacent phases in one thread
+  and do not pull later-phase cleanup into an earlier-phase change.
+- Before starting a phase task, check `STATUS.md` for the active phase and
+  update the matching checkpoint in `WORKLOG.md`.
+- If implementation reveals a conflict with `PLANS.md`, the canonical role
+  model, or graph/pipeline invariants, stop and record it in `WORKLOG.md` and
+  `STATUS.md` before revising the plan.
+- End each phase thread with a handoff log in `WORKLOG.md` and a short
+  `STATUS.md` update covering files changed, verification performed, blockers,
+  and the next checkpoint.
+
 ## Testing and Verification Expectations
 
 Tests exist and are organized by subsystem under `tests/`.
@@ -353,3 +368,120 @@ Do not rewrite old log entries except to add a clearly marked correction.
 
 If a task reveals a conflict with `PLANS.md`, record the conflict in
 `WORKLOG.md` first, then stop and update the plan explicitly.
+
+## Architecture Lock
+
+The following architecture is locked and must not be modified
+unless explicitly instructed by PLANS.md.
+
+Core pipeline:
+
+1. MofTopLibrary.fetch(...)
+2. FrameNet.create_net(...)
+3. MetalOrganicFrameworkBuilder.load_framework()
+4. MetalOrganicFrameworkBuilder.optimize_framework()
+5. MetalOrganicFrameworkBuilder.make_supercell()
+6. MetalOrganicFrameworkBuilder.build()
+
+Graph states must remain:
+
+G
+sG
+superG
+eG
+cleaved_eG
+
+Rules:
+
+- Do not rename these methods.
+- Do not reorder pipeline steps.
+- Do not merge pipeline stages.
+- Do not introduce new top-level pipeline stages.
+- Do not move responsibilities between modules.
+
+If an implementation requires architecture changes,
+stop and report the conflict instead of modifying it.
+
+## Role Model Invariants
+
+Role identifiers are the only topology classification mechanism.
+
+node_role_id must live on:
+
+FrameNet.G.nodes[n]["node_role_id"]
+
+edge_role_id must live on:
+
+FrameNet.G.edges[e]["edge_role_id"]
+
+Role identifiers must never be:
+
+- recomputed by downstream modules
+- replaced by local role maps
+- inferred from chemistry
+
+Fragment registries must remain:
+
+node_role_registry
+edge_role_registry
+
+Modules consuming roles must resolve fragment payloads
+through these registries.
+
+## Module Responsibility Lock
+
+Each module owns specific responsibilities.
+
+FrameNet
+    topology graph construction
+    topology role annotation
+
+MofTopLibrary
+    topology family metadata
+
+MetalOrganicFrameworkBuilder
+    fragment normalization
+    runtime role registries
+
+Optimizer
+    node/linker placement
+
+Supercell
+    supercell expansion
+
+Writer / Framework
+    merged structure output
+
+Defects
+    defect operations
+
+MD modules
+    simulation preparation
+
+Agents must not move responsibilities between modules.
+
+## Phase Contract Rule
+
+Before implementing a phase, generate a Phase Contract.
+
+The contract defines:
+
+goal
+scope
+allowed files
+forbidden files
+invariants
+success criteria
+stop rule
+
+Implementation must remain inside the contract boundary.
+
+Before coding, always summarize:
+
+1. the goal
+2. the scope
+3. the invariants
+4. the stop rule
+
+Then confirm that the implementation will remain within the current phase
+before producing code.
