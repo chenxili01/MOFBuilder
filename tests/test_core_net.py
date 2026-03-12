@@ -9,6 +9,37 @@ from mofbuilder.core.net import FrameNet, arr_dimension, is_list_A_in_B, lname, 
 TESTDATA = Path(__file__).resolve().parent / "testdata"
 
 
+def write_test_cif(tmp_path, atom_lines, v_con=1, ec_con=None):
+    header = "data_testnet  hall_number: 1, V_con: {}".format(v_con)
+    if ec_con is not None:
+        header += f", EC_con: {ec_con}"
+    cif_lines = [
+        header + "\n",
+        "_symmetry_space_group_name_H-M    'P1'\n",
+        "_symmetry_Int_Tables_number       1\n",
+        "loop_\n",
+        "_symmetry_equiv_pos_as_xyz\n",
+        "  x,y,z\n",
+        "_cell_length_a                    10.0\n",
+        "_cell_length_b                    10.0\n",
+        "_cell_length_c                    10.0\n",
+        "_cell_angle_alpha                 90.0\n",
+        "_cell_angle_beta                  90.0\n",
+        "_cell_angle_gamma                 90.0\n",
+        "loop_\n",
+        "_atom_site_label\n",
+        "_atom_site_type_symbol\n",
+        "_atom_site_fract_x\n",
+        "_atom_site_fract_y\n",
+        "_atom_site_fract_z\n",
+    ]
+    cif_lines.extend(f"{line}\n" for line in atom_lines)
+    cif_lines.append("loop_\n")
+    cif_path = tmp_path / "topology.cif"
+    cif_path.write_text("".join(cif_lines), encoding="utf-8")
+    return cif_path
+
+
 @pytest.mark.core
 def test_create_net_from_test_cif():
     net = FrameNet()
@@ -23,6 +54,82 @@ def test_create_net_from_test_cif():
     assert len(net.sorted_nodes) == net.G.number_of_nodes()
     assert len(net.sorted_edges) == net.G.number_of_edges()
     assert net.linker_connectivity == 2
+    assert {data["node_role_id"] for _, data in net.G.nodes(data=True)} == {
+        "node:default"
+    }
+    assert {data["edge_role_id"] for _, _, data in net.G.edges(data=True)} == {
+        "edge:default"
+    }
+
+
+@pytest.mark.core
+def test_create_net_preserves_single_role_scalar_outputs(tmp_path):
+    cif_path = write_test_cif(
+        tmp_path,
+        [
+            "V1    V   0.2500  0.0000  0.0000",
+            "V2    V   0.7500  0.0000  0.0000",
+            "E1    E   0.0000  0.0000  0.0000",
+        ],
+    )
+    net = FrameNet()
+    net.edge_length_range = [2.0, 3.0]
+    net.create_net(cif_file=str(cif_path))
+
+    assert net.linker_connectivity == 2
+    assert net.max_degree == 1
+    assert net.sorted_nodes == [
+        "V40_[0. 0. 0.]",
+        "V16_[0. 0. 0.]",
+        "V16_[-1.  0.  0.]",
+        "V40_[1. 0. 0.]",
+    ]
+    assert net.sorted_edges == [
+        ("V40_[0. 0. 0.]", "V16_[-1.  0.  0.]"),
+        ("V16_[0. 0. 0.]", "V40_[1. 0. 0.]"),
+    ]
+    assert {data["node_role_id"] for _, data in net.G.nodes(data=True)} == {
+        "node:default"
+    }
+    assert {data["edge_role_id"] for _, _, data in net.G.edges(data=True)} == {
+        "edge:default"
+    }
+
+
+@pytest.mark.core
+def test_create_net_attaches_deterministic_role_annotations(tmp_path):
+    cif_path = write_test_cif(
+        tmp_path,
+        [
+            "VA1   V   0.2500  0.0000  0.0000",
+            "VB1   V   0.7500  0.0000  0.0000",
+            "VA2   V   0.2500  0.2500  0.0000",
+            "VB2   V   0.7500  0.2500  0.0000",
+            "EA1   E   0.0000  0.0000  0.0000",
+            "EB1   E   0.0000  0.2500  0.0000",
+        ],
+    )
+    first = FrameNet()
+    first.edge_length_range = [2.0, 3.0]
+    first.create_net(cif_file=str(cif_path))
+
+    second = FrameNet()
+    second.edge_length_range = [2.0, 3.0]
+    second.create_net(cif_file=str(cif_path))
+
+    first_node_roles = sorted(data["node_role_id"]
+                              for _, data in first.G.nodes(data=True))
+    first_edge_roles = sorted(data["edge_role_id"]
+                              for _, _, data in first.G.edges(data=True))
+    second_node_roles = sorted(data["node_role_id"]
+                               for _, data in second.G.nodes(data=True))
+    second_edge_roles = sorted(data["edge_role_id"]
+                               for _, _, data in second.G.edges(data=True))
+
+    assert first_node_roles == second_node_roles
+    assert first_edge_roles == second_edge_roles
+    assert set(first_node_roles) == {"node:VA", "node:VB"}
+    assert set(first_edge_roles) == {"edge:EA", "edge:EB"}
 
 
 @pytest.mark.core

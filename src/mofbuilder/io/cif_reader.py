@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 import numpy as np
 from pathlib import Path
@@ -65,6 +67,8 @@ class CifReader:
 
         self.filepath: str = filepath
         self.data: np.ndarray | None = None
+        self.target_site_labels: np.ndarray | None = None
+        self.target_role_labels: np.ndarray | None = None
 
         self._debug: bool = False
 
@@ -223,9 +227,11 @@ class CifReader:
             space_group = re.search(
                 r"_symmetry_space_group_name_H-M\s+'([^']+)'", line)[1]
             return space_group
-        elif re.search(r"^data_", line) and line.count("_") >= 3:
-            potential_net_name = line.split()[0].split("_")[2]
-            return potential_net_name
+        elif re.search(r"^data_", line):
+            first_token = line.split()[0]
+            token_parts = first_token.split("_")
+            if len(token_parts) >= 3:
+                return token_parts[2]
         return "P1"
 
     def _valid_hallnumber_line(self, line: str) -> str:
@@ -407,13 +413,49 @@ class CifReader:
         Returns:
             np.ndarray: Unique, wrapped fractional coordinates.
         """
-        fccords = np.unique(np.array(fccords, dtype=float), axis=0)
-        fccords = self._limit_value_0_1(fccords)
-        fccords += 0.5
-        fccords = self._limit_value_0_1(fccords)
-        fccords += -0.5
-        fccords = np.unique(np.array(fccords, dtype=float), axis=0)
-        return fccords
+        wrapped_fcoords, _ = self._wrap_fcoords_to_0_1_with_indices(fccords)
+        return wrapped_fcoords
+
+    def _wrap_fcoords_to_0_1_with_indices(
+        self, fccords: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Center/wrap fractional coordinates to [0,1) and return the source indices
+        for the unique wrapped coordinates.
+
+        Args:
+            fccords (np.ndarray): Fractional coordinates.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: Wrapped unique coordinates and the
+            indices of the first matching source rows.
+        """
+        fccords = np.asarray(fccords, dtype=float)
+        unique_fcoords, unique_indices = np.unique(
+            fccords, axis=0, return_index=True
+        )
+        unique_fcoords = self._limit_value_0_1(unique_fcoords)
+        unique_fcoords += 0.5
+        unique_fcoords = self._limit_value_0_1(unique_fcoords)
+        unique_fcoords += -0.5
+        wrapped_fcoords, wrapped_indices = np.unique(
+            np.array(unique_fcoords, dtype=float), axis=0, return_index=True
+        )
+        return wrapped_fcoords, unique_indices[wrapped_indices]
+
+    def _extract_role_label(self, atom_site_label: str) -> str:
+        """
+        Normalize a raw atom-site label into a topology role label while
+        preserving the original label separately.
+
+        Args:
+            atom_site_label (str): Raw `_atom_site_label` value from the CIF.
+
+        Returns:
+            str: Role label derived from the raw label.
+        """
+        role_label = remove_tail_number(str(atom_site_label))
+        return role_label if role_label else str(atom_site_label)
 
     def _apply_sym_operator(
         self,
@@ -471,17 +513,19 @@ class CifReader:
             if m is None:
                 atom_site_lines.append(line)
 
-        array_atom = np.zeros((len(atom_site_lines), 2), dtype=object)
+        array_atom = np.zeros((len(atom_site_lines), 4), dtype=object)
         array_xyz = np.zeros((len(atom_site_lines), 3))
 
         for i in range(len(atom_site_lines)):
-            for j in [0, 1, 2, 3, 4]:  # only need atom type, atom label, x,y,z
-                if j < 2:
-                    array_atom[i, j] = remove_tail_number(
-                        atom_site_lines[i].split()[j])
-                else:
-                    array_xyz[i, (j - 2)] = remove_bracket(
-                        atom_site_lines[i].split()[j])
+            split_line = atom_site_lines[i].split()
+            raw_site_label = split_line[0]
+            atom_type = remove_tail_number(split_line[1])
+            array_atom[i, 0] = atom_type
+            array_atom[i, 1] = atom_type
+            array_atom[i, 2] = raw_site_label
+            array_atom[i, 3] = self._extract_role_label(raw_site_label)
+            for j in [2, 3, 4]:
+                array_xyz[i, (j - 2)] = remove_bracket(split_line[j])
         if self._debug:
             self.ostream.print_info(
                 f"Found {len(array_atom)} atoms in atom_site_sector")
@@ -506,12 +550,18 @@ class CifReader:
         array_atom, array_xyz = self._extract_atoms_fcoords_from_lines(
             self.atom_site_sector)
         if target_type is None:
+            selected_atom = array_atom
+            selected_xyz = array_xyz
+        else:
+            selected_mask = array_atom[:, 0] == target_type
+            selected_atom = array_atom[selected_mask]
+            selected_xyz = array_xyz[selected_mask]
+        if target_type is None:
             self.ostream.print_info(
                 f"target_type not specified, use {target_type} as default")
             self.ostream.flush()
         if len(self.symmetry_sector) > 1:  # need to apply symmetry operations
-            array_metal_xyz = array_xyz[array_atom[:, 0] == target_type]
-            array_metal_xyz = np.round(array_metal_xyz, 4)
+            array_metal_xyz = np.round(selected_xyz, 4)
             symmetry_sector_neat = extract_quote_lines(self.symmetry_sector)
             if len(symmetry_sector_neat) < 2:  # if no quote, then find x,y,z
                 symmetry_sector_neat = extract_xyz_lines(self.symmetry_sector)
@@ -520,21 +570,26 @@ class CifReader:
             no_sym_array_metal_xyz, no_sym_indices = self._apply_sym_operator(
                 symmetry_operations, array_metal_xyz)
             array_metal_xyz_final = no_sym_array_metal_xyz
-            array_atom = np.tile(array_atom,
-                                 (len(symmetry_operations), 1))[no_sym_indices]
+            selected_atom = np.tile(selected_atom, (len(symmetry_operations), 1))[
+                no_sym_indices
+            ]
 
         else:
-            array_metal_xyz = array_xyz[array_atom[:, 0] == target_type]
-            array_metal_xyz_final = np.round(array_metal_xyz, 4)
+            array_metal_xyz_final, final_indices = (
+                self._wrap_fcoords_to_0_1_with_indices(selected_xyz)
+            )
+            selected_atom = selected_atom[final_indices]
 
-        self.fcoords = self._wrap_fccords_to_0_1(array_metal_xyz_final)
-        self.target_fcoords = self._wrap_fccords_to_0_1(array_metal_xyz_final)
+        self.fcoords = array_metal_xyz_final
+        self.target_fcoords = array_metal_xyz_final
+        self.target_site_labels = np.asarray(selected_atom[:, 2], dtype=object)
+        self.target_role_labels = np.asarray(selected_atom[:, 3], dtype=object)
 
         self.data = []
         for i in range(len(self.fcoords)):
             atom_number = i + 1
-            atom_type = array_atom[i, 0] + str(atom_number)
-            atom_label = array_atom[i, 1]
+            atom_type = selected_atom[i, 0] + str(atom_number)
+            atom_label = selected_atom[i, 1]
             residue_name = 'MOL'
             residue_number = 1
             x = self.fcoords[i, 0]

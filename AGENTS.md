@@ -127,6 +127,33 @@ Important public surfaces:
   `STATUS.md` update covering files changed, verification performed, blockers,
   and the next checkpoint.
 
+chmod +x scripts/run_tests.sh
+
+## Test Execution Rule
+
+All tests must be executed using the repository test runner:
+
+scripts/run_tests.sh
+
+Example:
+
+scripts/run_tests.sh tests/test_io_reader.py
+scripts/run_tests.sh tests/test_core_net.py
+
+Rules:
+
+- Do not run pytest directly.
+- Do not attempt to reconstruct the environment manually.
+- Always use `scripts/run_tests.sh` so the correct conda environment and
+  PYTHONPATH are applied.
+- Prefer running the narrowest relevant tests for the current phase.
+
+Rules:
+
+- Do not run pytest directly without the conda environment.
+- Always set `PYTHONPATH=src`.
+- Prefer running the narrowest relevant tests for the current phase.
+
 ## Testing and Verification Expectations
 
 Tests exist and are organized by subsystem under `tests/`.
@@ -497,6 +524,9 @@ The planner must not:
 
 Planner output should be limited to phase scope, invariants, allowed files,
 forbidden files, required tests, success criteria, and stop rules.
+
+Every phase implementation must pass a Reviewer check
+before moving to the next phase.
 
 Before coding, always summarize:
 

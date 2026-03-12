@@ -125,31 +125,69 @@ Use this exact field set for every checkpoint subsection.
 
 ### Checkpoint P1.1 — implementation
 
-- Date:
-- Thread / branch:
-- Status: pending
-- Goal:
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Date: 2026-03-12
+- Thread / branch: `codex_record`
+- Status: complete
+- Goal: preserve raw topology labels during CIF parsing and attach deterministic `node_role_id` / `edge_role_id` annotations on `FrameNet.G` without changing single-role scalar outputs or higher-layer behavior
+- Phase gate checked against `PLANS.md`: yes; implementation stayed inside `src/mofbuilder/io/cif_reader.py`, `src/mofbuilder/core/net.py`, and the matching tests only.
+- Files changed: `src/mofbuilder/io/cif_reader.py`, `src/mofbuilder/core/net.py`, `tests/test_io_reader.py`, `tests/test_core_net.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: `test_cif_reader_preserves_raw_site_labels_for_role_parsing`, `test_create_net_preserves_single_role_scalar_outputs`, `test_create_net_attaches_deterministic_role_annotations`
+- Tests run: `python -m compileall src/mofbuilder/io/cif_reader.py src/mofbuilder/core/net.py tests/test_io_reader.py tests/test_core_net.py` (passed); `PYTHONPATH=src pytest tests/test_io_reader.py tests/test_core_net.py -q` (failed: `pytest` command not installed); `PYTHONPATH=src python -m pytest tests/test_io_reader.py tests/test_core_net.py -q` (failed: `No module named pytest`)
+- Decisions: kept the existing `target_type="V"/"E"/"EC"` selection path intact while preserving raw `_atom_site_label` data separately; derived deterministic role stems from raw site labels without inferring chemistry; normalized single-role templates to `node:default` / `edge:default`; attached role ids at graph construction time so downstream modules can ignore them in Phase 1.
+- Conflicts / blockers: no plan or architecture conflict discovered; runtime pytest verification is blocked in the local environment because `pytest` is not installed.
+- Handoff / next checkpoint: `P1.2` — handoff
+
+**Correction — 2026-03-12 runtime verification resume**
+
+- Files changed: `src/mofbuilder/io/cif_reader.py`, `tests/test_io_reader.py`, `tests/test_core_net.py`, `WORKLOG.md`, `STATUS.md`
+- Tests run: `python -m pytest tests/test_io_reader.py` (failed: `/Users/chenxili/miniforge3/bin/python` has no `pytest`); `python -m pytest tests/test_core_net.py` (failed for the same reason); `conda run -n testmofbuilder env PYTHONPATH=src python -c "import networkx, pytest, sys; sys.exit(pytest.main(['tests/test_io_reader.py']))"` (passed); `conda run -n testmofbuilder env PYTHONPATH=src python -c "import networkx, pytest, sys; sys.exit(pytest.main(['tests/test_core_net.py']))"` (passed with existing `pytest.mark.core` warnings only)
+- Decisions: deferred `CifReader` annotations with `from __future__ import annotations` so the test MPI stub can import the parser; hardened `_valid_spacegroup_line()` for minimal `data_...` headers used by the Phase 1 topology fixtures; aligned the temporary CIF/GRO regression fixtures with existing wrapped primitive-cell and fixed-column reader behavior instead of changing out-of-scope modules.
+- Conflicts / blockers: no Phase 1 invariant conflict; only residual issue is non-blocking `PytestUnknownMarkWarning` for `pytest.mark.core` in `tests/test_core_net.py`.
 
 ### Checkpoint P1.2 — handoff
 
-- Date:
-- Thread / branch:
-- Status: pending
+- Date: 2026-03-12
+- Thread / branch: `codex_record`
+- Status: complete
 - Goal: confirm Phase 1 exit criteria and next-phase handoff
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Phase gate checked against `PLANS.md`: yes; Phase 1 remained topology-only and did not touch builder/runtime/optimizer/supercell/writer/defects/framework/MD modules or bundled database files.
+- Files changed: `src/mofbuilder/io/cif_reader.py`, `src/mofbuilder/core/net.py`, `tests/test_io_reader.py`, `tests/test_core_net.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: `test_cif_reader_preserves_raw_site_labels_for_role_parsing`, `test_create_net_preserves_single_role_scalar_outputs`, `test_create_net_attaches_deterministic_role_annotations`
+- Tests run: static compilation passed via `python -m compileall`; runtime pytest execution was attempted twice and blocked by missing local `pytest` installation.
+- Decisions: Phase 1 now preserves raw site labels, emits deterministic graph role annotations, and keeps current single-role scalar topology outputs unchanged by contract; repeated parsing is covered by a deterministic role-id regression test.
+- Conflicts / blockers: residual verification gap only; runtime pytest remains unexecuted in this environment due to missing `pytest`.
+- Handoff / next checkpoint: Phase 1 handoff complete; next checkpoint is `P2.0` when a new thread begins Phase 2.
+
+**Correction — 2026-03-12 runtime verification closed**
+
+- Tests run: runtime verification is now complete for the Phase 1 required narrow scope via the `testmofbuilder` conda environment; `tests/test_io_reader.py` passed (8 tests) and `tests/test_core_net.py` passed (5 tests, 5 mark warnings).
+- Decisions: Phase 1 handoff remains complete; no additional source-module scope was required beyond the allowed Phase 1 files.
+- Conflicts / blockers: the prior pytest-availability blocker is resolved for the Phase 1 narrow test path; no active Phase 1 blocker remains.
+- Handoff / next checkpoint: Phase 1 remains complete and runtime-verified; next checkpoint is still `P2.0` in a new thread if the handoff is accepted.
+
+**Correction — 2026-03-12 Phase 1 review-fix reopen (before coding)**
+
+- Scope: restore the required standard Phase 1 runner path using only `tests/conftest.py`, the two Phase 1 tests, `WORKLOG.md`, and `STATUS.md`.
+- Invariants: keep Phase 1 topology behavior unchanged, keep the locked architecture unchanged, and treat `scripts/run_tests.sh tests/test_io_reader.py` plus `scripts/run_tests.sh tests/test_core_net.py` as the only valid verification path for this review fix.
+- Out-of-scope modules: all later-phase modules plus broad environment or architecture changes remain forbidden.
+- Tests run: `scripts/run_tests.sh tests/test_io_reader.py` (passed); `scripts/run_tests.sh tests/test_core_net.py` (failed because `tests/conftest.py` replaced installed `networkx` with a stub whose `Graph.add_edge()` rejected edge attributes).
+- Decisions: the blocking issue is a standard-path test harness defect, not a Phase 1 source-model or architecture conflict; the minimal safe fix path is to stop shadowing an installed `networkx` package during test startup.
+- Conflicts / blockers: the Phase 1 handoff cannot remain marked complete while the required standard runner path is failing.
+- Handoff / next checkpoint: apply the minimal harness fix, rerun the two required commands, then replace the false pass statements with the actual runner results.
+
+**Correction — 2026-03-12 Phase 1 review-fix result**
+
+- Files changed: `tests/conftest.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: none
+- Tests run: `scripts/run_tests.sh tests/test_io_reader.py` (passed: 8 tests); `scripts/run_tests.sh tests/test_core_net.py` (passed: 5 tests, 5 existing `PytestUnknownMarkWarning` warnings for `pytest.mark.core`)
+- Decisions: kept the fix inside the Phase 1 harness boundary by making `tests/conftest.py` preserve a real installed `networkx` package and fall back to the stub only when `networkx` is actually unavailable; no Phase 1 source or architecture changes were required.
+- Conflicts / blockers: none for the required Phase 1 standard test path; the remaining marker warnings are pre-existing and non-blocking for this review fix.
+- Handoff / next checkpoint: corrected the earlier false pass narrative, restored valid Phase 1 handoff status, and kept `P2.0` as the next checkpoint in a new thread if accepted.
+
+**Correction — 2026-03-12 false pass statement withdrawn**
+
+- The earlier "runtime verification closed" note was not valid for the required Phase 1 standard path because it depended on ad hoc `conda run ... python -c "import networkx, pytest, ... pytest.main(...)"` commands that pre-imported `networkx` and bypassed the actual `tests/conftest.py` startup behavior.
+- The authoritative Phase 1 verification record is now the required standard runner path above, executed via `scripts/run_tests.sh`.
 
 ## Phase 2 — Additive Family/Template Role Metadata
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, List, Optional
 
 import numpy as np
@@ -82,6 +83,12 @@ class FrameNet:
         self.sorted_nodes = None
         self.sorted_edges = None
         self.linker_connectivity = None
+        self.vvnode_role_ids = None
+        self.vvnode333_role_ids = None
+        self.eenode_role_ids = None
+        self.eenode333_role_ids = None
+        self.ecnode_role_ids = None
+        self.ecnode333_role_ids = None
 
         #debug
         self._debug = False
@@ -93,6 +100,27 @@ class FrameNet:
         mesh = np.stack(np.meshgrid(shifts, shifts, shifts), -1).reshape(-1, 3)
         supercell = (array_xyz[:, None, :] + mesh).reshape(-1, 3)
         return supercell
+
+    def _make_supercell_role_ids(self, role_ids):
+        """Repeat primitive role ids to match the 3x3x3 supercell coordinate layout."""
+        role_ids = np.asarray(role_ids, dtype=object)
+        return np.repeat(role_ids, 27)
+
+    def _sanitize_role_token(self, role_label):
+        """Sanitize a topology role token so it can be embedded in a stable role id."""
+        token = re.sub(r"[^0-9A-Za-z_.:-]+", "_", str(role_label)).strip("_")
+        return token if token else "default"
+
+    def _build_role_ids(self, role_labels, prefix):
+        """Build deterministic role ids from normalized topology role labels."""
+        role_labels = np.asarray(role_labels, dtype=object)
+        unique_labels = {str(label) for label in role_labels if str(label)}
+        if len(unique_labels) <= 1:
+            return np.full(len(role_labels), f"{prefix}:default", dtype=object)
+        return np.asarray(
+            [f"{prefix}:{self._sanitize_role_token(label)}" for label in role_labels],
+            dtype=object,
+        )
 
     # Unit cell extraction and coordinate conversion
     def _extract_unit_cell(self, cell_info):
@@ -147,12 +175,14 @@ class FrameNet:
         unit_cell = self.unit_cell
         vvnode333 = self.vvnode333
         eenode333 = self.eenode333
+        vvnode333_role_ids = self.vvnode333_role_ids
+        eenode333_role_ids = self.eenode333_role_ids
 
         G = self.G
         pair_vertex_edge = []
         vvnode333 = np.asarray(vvnode333)
         eenode333 = np.asarray(eenode333)
-        for e in eenode333:
+        for e_idx, e in enumerate(eenode333):
             dist = np.linalg.norm(np.dot(unit_cell, (vvnode333 - e).T).T,
                                   axis=1)
             # If no range provided, take two closest
@@ -180,12 +210,25 @@ class FrameNet:
             if self._check_inside_unit_cell(
                     v1) or self._check_inside_unit_cell(v2):
                 if np.linalg.norm(center - e) < 1e-3:
-                    G.add_node(f"V{v1_idx}", fcoords=v1, note="V", type="V")
-                    G.add_node(f"V{v2_idx}", fcoords=v2, note="V", type="V")
+                    G.add_node(
+                        f"V{v1_idx}",
+                        fcoords=v1,
+                        note="V",
+                        type="V",
+                        node_role_id=vvnode333_role_ids[v1_idx],
+                    )
+                    G.add_node(
+                        f"V{v2_idx}",
+                        fcoords=v2,
+                        note="V",
+                        type="V",
+                        node_role_id=vvnode333_role_ids[v2_idx],
+                    )
                     G.add_edge(f"V{v1_idx}",
                                f"V{v2_idx}",
                                fcoords=(v1, v2),
-                               fc_center=e)
+                               fc_center=e,
+                               edge_role_id=eenode333_role_ids[e_idx])
                     pair_vertex_edge.append((v1, v2, e))
         self.G = G
         self.pair_vertex_edge = pair_vertex_edge
@@ -196,10 +239,13 @@ class FrameNet:
         ecnode333 = self.ecnode333
         eenode333 = self.eenode333
         unit_cell = self.unit_cell
+        vvnode333_role_ids = self.vvnode333_role_ids
+        ecnode333_role_ids = self.ecnode333_role_ids
+        eenode333_role_ids = self.eenode333_role_ids
 
         G = self.G
         pair_vertex_edge = []
-        for e in eenode333:
+        for e_idx, e in enumerate(eenode333):
             dist_v_e = np.linalg.norm(np.dot(unit_cell, (vvnode333 - e).T).T,
                                       axis=1)
             v1_idx = np.argmin(dist_v_e)
@@ -212,12 +258,23 @@ class FrameNet:
             if self._check_inside_unit_cell(
                     v1) or self._check_inside_unit_cell(v2):
                 if np.linalg.norm(center - e) < 0.1:
-                    G.add_node(f"V{v1_idx}", fcoords=v1, note="V")
-                    G.add_node(f"CV{v2_idx}", fcoords=v2, note="CV")
+                    G.add_node(
+                        f"V{v1_idx}",
+                        fcoords=v1,
+                        note="V",
+                        node_role_id=vvnode333_role_ids[v1_idx],
+                    )
+                    G.add_node(
+                        f"CV{v2_idx}",
+                        fcoords=v2,
+                        note="CV",
+                        node_role_id=ecnode333_role_ids[v2_idx],
+                    )
                     G.add_edge(f"V{v1_idx}",
                                f"CV{v2_idx}",
                                fcoords=(v1, v2),
-                               fc_center=e)
+                               fc_center=e,
+                               edge_role_id=eenode333_role_ids[e_idx])
                     pair_vertex_edge.append((f"V{v1_idx}", f"CV{v2_idx}", e))
         self.G = G
         self.pair_vertex_edge = pair_vertex_edge
@@ -391,19 +448,30 @@ class FrameNet:
         self.ostream.flush()
         _, _, self.vvnode = self.cifreader.get_type_atoms_fcoords_in_primitive_cell(
             target_type="V")
+        self.vvnode_role_ids = self._build_role_ids(
+            self.cifreader.target_role_labels, "node")
         self.ostream.print_info(f"fetching Edge from {self.cif_file}")
         self.ostream.flush()
         _, _, self.eenode = self.cifreader.get_type_atoms_fcoords_in_primitive_cell(
             target_type="E")
+        self.eenode_role_ids = self._build_role_ids(
+            self.cifreader.target_role_labels, "edge")
         self.vvnode333 = self._make_supercell_3x3x3(self.vvnode)
         self.eenode333 = self._make_supercell_3x3x3(self.eenode)
+        self.vvnode333_role_ids = self._make_supercell_role_ids(self.vvnode_role_ids)
+        self.eenode333_role_ids = self._make_supercell_role_ids(
+            self.eenode_role_ids)
         if self.cifreader.EC_con is not None:
             self.ostream.print_info(
                 f"fetching Edge Center from {self.cif_file}")
             self.ostream.flush()
             _, _, self.ecnode = self.cifreader.get_type_atoms_fcoords_in_primitive_cell(
                 target_type="EC")
+            self.ecnode_role_ids = self._build_role_ids(
+                self.cifreader.target_role_labels, "node")
             self.ecnode333 = self._make_supercell_3x3x3(self.ecnode)
+            self.ecnode333_role_ids = self._make_supercell_role_ids(
+                self.ecnode_role_ids)
 
         self.cell_info = self.cifreader.cell_info
         self.unit_cell = self._extract_unit_cell(self.cell_info)

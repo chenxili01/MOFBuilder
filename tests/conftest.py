@@ -291,6 +291,13 @@ def _install_networkx_stub() -> None:
     if "networkx" in sys.modules:
         return
 
+    try:
+        __import__("networkx")
+    except ImportError:
+        pass
+    else:
+        return
+
     nx_module = types.ModuleType("networkx")
     nx_algorithms = types.ModuleType("networkx.algorithms")
     nx_iso = types.ModuleType("networkx.algorithms.isomorphism")
