@@ -340,3 +340,16 @@ exists.
 
 Avoid unnecessary dictionary lookups or dynamic dispatch in tight loops when
 the registry size is one.
+
+## Work Log Rule
+
+For each implementation phase, update `WORKLOG.md` at three points:
+
+1. before coding: scope, invariants, out-of-scope modules
+2. after coding: files changed, decisions made, tests run, result
+3. at handoff: remaining issues, next phase readiness, plan conflicts
+
+Do not rewrite old log entries except to add a clearly marked correction.
+
+If a task reveals a conflict with `PLANS.md`, record the conflict in
+`WORKLOG.md` first, then stop and update the plan explicitly.

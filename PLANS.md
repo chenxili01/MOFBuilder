@@ -769,3 +769,17 @@ Stop implementation and update this plan before continuing.
 Do not redesign multiple layers in a single thread.
 Do not resolve a schema/runtime mismatch by silently changing both sides in one
 pass; stop at the boundary and make the conflict explicit.
+
+## Execution Logging Rule
+
+Each phase should produce a corresponding entry in `WORKLOG.md` with:
+
+- intended scope
+- files changed
+- tests run
+- result
+- unresolved issues
+- handoff notes
+
+`PLANS.md` remains the controlling plan.
+`WORKLOG.md` records execution history and checkpoint status.
