@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 import sys
+from types import SimpleNamespace
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -61,3 +62,52 @@ def test_read_context_reads_repo_root_status_snapshot():
 
     assert "===== STATUS.md =====" in context
     assert "Minimal dashboard for phased multi-role execution." in context
+
+
+def test_run_codex_exec_places_never_approval_before_exec_subcommand(monkeypatch):
+    workflow_run = load_workflow_run_module()
+    captured = {}
+
+    monkeypatch.setattr(workflow_run, "command_exists", lambda name: True)
+
+    def fake_run_cmd(cmd, *, check=True, cwd=workflow_run.ROOT, env=None):
+        captured["cmd"] = list(cmd)
+        return SimpleNamespace(stdout='{"approved": false}', stderr="")
+
+    monkeypatch.setattr(workflow_run, "run_cmd", fake_run_cmd)
+
+    workflow_run.run_codex_exec(
+        "review prompt",
+        model="gpt-test",
+        allow_edits=False,
+        use_search=False,
+    )
+
+    assert captured["cmd"][:4] == ["codex", "--ask-for-approval", "never", "exec"]
+    assert "--sandbox" in captured["cmd"]
+    assert "read-only" in captured["cmd"]
+    assert captured["cmd"][-1] == "review prompt"
+
+
+def test_run_codex_exec_keeps_edit_mode_on_exec_subcommand(monkeypatch):
+    workflow_run = load_workflow_run_module()
+    captured = {}
+
+    monkeypatch.setattr(workflow_run, "command_exists", lambda name: True)
+
+    def fake_run_cmd(cmd, *, check=True, cwd=workflow_run.ROOT, env=None):
+        captured["cmd"] = list(cmd)
+        return SimpleNamespace(stdout="done", stderr="")
+
+    monkeypatch.setattr(workflow_run, "run_cmd", fake_run_cmd)
+
+    workflow_run.run_codex_exec(
+        "executor prompt",
+        model="gpt-test",
+        allow_edits=True,
+        use_search=False,
+    )
+
+    assert captured["cmd"][:2] == ["codex", "exec"]
+    assert "--full-auto" in captured["cmd"]
+    assert "--ask-for-approval" not in captured["cmd"]

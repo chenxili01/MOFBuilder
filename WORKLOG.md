@@ -1766,3 +1766,42 @@ Updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/wor
 **Any Conflicts or Reasons for Stopping**
 
 No schema or architecture conflict was discovered. I stopped at the Phase 1 boundary because the current contract does not authorize source, test, or database edits.
+
+## Maintenance Task — 2026-03-14
+
+### Workflow runner CLI compatibility — preflight
+
+- Goal: repair the automated reviewer bootstrap so `workflow/run.py` can invoke
+  the installed Codex CLI without the rejected `--ask-for-approval` argument
+  placement.
+- Scope: `workflow/run.py`, `tests/test_workflow_run.py`, and this maintenance
+  log/status synchronization only.
+- Invariants: preserve the locked MOFBuilder pipeline, graph states, public
+  APIs, repository phase roadmap, and current Phase 1 control-doc baseline.
+- Out of scope: `PLANS.md`, `REVIEW.md`, core scientific modules under `src/`,
+  bundled databases, and unrelated workflow behavior changes.
+- Stop rule: stop if the repair requires changing frozen phase semantics,
+  widening beyond the workflow runner/test seam, or modifying core runtime
+  modules outside this localized maintenance path.
+
+### Workflow runner CLI compatibility — implementation result
+
+- Files changed: `workflow/run.py`, `tests/test_workflow_run.py`, `WORKLOG.md`,
+  `STATUS.md`
+- Decisions: moved the non-edit reviewer approval policy to the top-level
+  `codex` invocation (`codex --ask-for-approval never exec ...`) while keeping
+  the existing `exec` subcommand flow and edit-mode behavior intact; added
+  regression coverage that captures the constructed argv for both reviewer and
+  executor modes.
+- Tests run: `scripts/run_tests.sh tests/test_workflow_run.py` (passed: 6
+  tests)
+- Result: localized workflow-runner compatibility repair completed without
+  widening into the scientific runtime or phase roadmap.
+
+### Workflow runner CLI compatibility — handoff
+
+- Remaining issues: none found in this localized seam
+- Blockers: none
+- Next checkpoint: repository root remains on `Phase 1 - Planning/spec` /
+  `P1.0`; the automated runner can resume from the normal planner/executor
+  flow with the reviewer invocation repaired

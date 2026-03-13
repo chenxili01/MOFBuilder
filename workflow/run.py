@@ -344,12 +344,21 @@ def run_codex_exec(
             "Codex CLI was not found on PATH. Install it first, then sign in with ChatGPT or configure auth."
         )
 
-    cmd = ["codex", "exec", "--model", model]
+    cmd = ["codex"]
+
+    if allow_edits:
+        cmd.append("exec")
+    else:
+        # `codex exec` no longer accepts `--ask-for-approval` after the
+        # subcommand, so keep the approval policy at the top level.
+        cmd.extend(["--ask-for-approval", "never", "exec"])
+
+    cmd.extend(["--model", model])
 
     if allow_edits:
         cmd.extend(["--full-auto"])
     else:
-        cmd.extend(["--sandbox", "read-only", "--ask-for-approval", "never"])
+        cmd.extend(["--sandbox", "read-only"])
 
     if use_search:
         cmd.append("--search")
