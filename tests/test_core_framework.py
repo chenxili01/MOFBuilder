@@ -2,6 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import networkx as nx
 import pytest
 
 from mofbuilder.core.framework import Framework
@@ -76,6 +77,52 @@ def test_framework_get_merged_data_sets_arrays():
     assert fw.framework_data is not None
     assert fw.framework_fcoords_data is not None
     assert fw.residues_info == {"MOF": 1}
+
+
+@pytest.mark.core
+def test_framework_get_merged_data_forwards_role_aware_metadata_to_writer():
+    role_dummy_atom_node_dict = {
+        "node:alpha": {
+            "dummy_atom_node_dict": {
+                "METAL_count": 1,
+                "dummy_res_len": 1,
+                "HHO_count": 0,
+                "HO_count": 1,
+                "O_count": 0,
+            }
+        }
+    }
+    role_xoo_dict = {
+        "node:alpha": {
+            "xoo_dict": {
+                1: [2, 3],
+            }
+        }
+    }
+    graph = {"graph": "role-aware"}
+
+    class ForwardingWriter(_FakeMofWriter):
+
+        def only_get_merged_data(self):
+            assert self.G is graph
+            assert self.xoo_dict == role_xoo_dict
+            assert self.dummy_atom_node_dict == role_dummy_atom_node_dict
+            return super().only_get_merged_data()
+
+    fw = Framework()
+    fw.mofwriter = ForwardingWriter()
+    fw.graph = graph
+    fw.supercell_info = [10.0, 10.0, 10.0]
+    fw.sc_unit_cell = np.eye(3)
+    fw.xoo_dict = role_xoo_dict
+    fw.dummy_atom_node_dict = role_dummy_atom_node_dict
+    fw.target_directory = "tests/output"
+    fw.supercell = [1, 1, 1]
+
+    fw.get_merged_data()
+
+    assert fw.framework_data is not None
+    assert fw.framework_fcoords_data is not None
 
 
 @pytest.mark.core
@@ -158,3 +205,87 @@ def test_framework_solvate_and_md_prepare(monkeypatch, tmp_path):
 
     assert fw.gmx_ff.top_path.endswith("system.top")
     assert fw.md_driver.gro_file.endswith("MOF-TEST_in_solvent.gro")
+
+
+@pytest.mark.core
+def test_framework_remove_and_replace_return_new_framework_instances(monkeypatch):
+    remove_merge_calls = []
+    replace_merge_calls = []
+
+    class FakeDefectGenerator:
+
+        def __init__(self, comm=None, ostream=None):
+            self.updated_matched_vnode_xind = [("VA_0", 1, "EDGE_0")]
+            self.updated_unsaturated_nodes = ["VA_0"]
+            self.unsaturated_linkers = ["EDGE_0"]
+            self.xoo_dict = None
+            self.new_node_data = None
+            self.new_node_X_data = None
+            self.new_linker_data = None
+            self.new_linker_X_data = None
+
+        def remove_items_or_terminate(self, remove_indices, cleaved_eG):
+            return cleaved_eG.copy()
+
+        def replace_items(self, replace_indices, G):
+            return G.copy()
+
+    def fake_remove_merge(self, extra_graph=None):
+        remove_merge_calls.append(self.graph if extra_graph is None else extra_graph)
+        self.framework_data = np.array([["R"]], dtype=object)
+        self.framework_fcoords_data = self.framework_data.copy()
+
+    def fake_replace_merge(self, extra_graph=None):
+        replace_merge_calls.append(self.graph if extra_graph is None else extra_graph)
+        self.framework_data = np.array([["P"]], dtype=object)
+        self.framework_fcoords_data = self.framework_data.copy()
+
+    import mofbuilder.core.framework as fw_mod
+
+    monkeypatch.setattr(fw_mod, "TerminationDefectGenerator", FakeDefectGenerator)
+
+    remove_fw = Framework()
+    remove_fw.graph = nx.Graph()
+    remove_fw.graph.add_node("VA_0")
+    remove_fw.termination = False
+    remove_fw.linker_connectivity = 2
+    remove_fw.node_connectivity = 4
+    remove_fw.add_virtual_edge = False
+    remove_fw.graph_index_name_dict = {1: "VA_0"}
+    remove_fw.sc_unit_cell = np.eye(3)
+    remove_fw.sc_unit_cell_inv = np.eye(3)
+    remove_fw.clean_unsaturated_linkers = False
+    remove_fw.update_node_termination = True
+    remove_fw.matched_vnode_xind = []
+    remove_fw.xoo_dict = {"node:alpha": {"xoo_dict": {1: [2, 3]}}}
+    remove_fw.unsaturated_linkers = []
+    remove_fw.unsaturated_nodes = []
+    monkeypatch.setattr(Framework, "get_merged_data", fake_remove_merge)
+
+    removed = remove_fw.remove(remove_indices=[1])
+
+    assert removed is not remove_fw
+    assert isinstance(removed, Framework)
+    assert remove_merge_calls == [removed.graph]
+
+    replace_fw = Framework()
+    replace_fw.graph = nx.Graph()
+    replace_fw.graph.add_node("VA_0")
+    replace_fw.termination = False
+    replace_fw.linker_connectivity = 2
+    replace_fw.node_connectivity = 4
+    replace_fw.add_virtual_edge = False
+    replace_fw.graph_index_name_dict = {1: "VA_0"}
+    replace_fw.sc_unit_cell = np.eye(3)
+    replace_fw.sc_unit_cell_inv = np.eye(3)
+    replace_fw.clean_unsaturated_linkers = False
+    replace_fw.update_node_termination = True
+    replace_fw.unsaturated_linkers = []
+    replace_fw.unsaturated_nodes = []
+    monkeypatch.setattr(Framework, "get_merged_data", fake_replace_merge)
+
+    replaced = replace_fw.replace(replace_indices=[1])
+
+    assert replaced is not replace_fw
+    assert isinstance(replaced, Framework)
+    assert replace_merge_calls == [replaced.graph]

@@ -709,46 +709,115 @@ Use this exact field set for every checkpoint subsection.
 
 ### Checkpoint P6.0 — before coding
 
-- Date:
-- Thread / branch:
-- Status: pending
+- Date: 2026-03-13
+- Thread / branch: `codex_record`
+- Status: complete
 - Goal: generalize merged-data and defect paths to consume role-specific node
   metadata
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Phase gate checked against `PLANS.md`: yes; Phase 6 remains limited to `src/mofbuilder/core/write.py`, `src/mofbuilder/core/defects.py`, `src/mofbuilder/core/framework.py`, `tests/test_core_write.py`, `tests/test_core_defects.py`, `tests/test_core_framework.py`, and planner logging in `WORKLOG.md` / `STATUS.md`, with MD and force-field generalization still out of scope.
+- Files changed: `WORKLOG.md`, `STATUS.md`
+- Tests added: none
+- Tests run: none
+- Decisions: recorded the Phase 6 Phase Contract under `P6.0`; kept `Framework.get_merged_data()` as the synchronization point after structural edits, preserved `remove()` / `replace()` return semantics, and kept role identity graph-stored rather than introducing writer-local or defect-local role maps.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: `P6.1` — implementation
+
+**Phase Contract**
+
+- Phase name: `Phase 6 — Role-Aware Writer and Defect Metadata`
+
+**Goal**
+- Generalize merged-data assembly and defect logic to use role-specific node metadata.
+
+**Scope**
+- Replace the assumption of one global `dummy_atom_node_dict`.
+- Replace the assumption of one global `xoo_dict`.
+- Keep `Framework.get_merged_data()` as the synchronization point after structural edits.
+- Preserve current mutation semantics:
+  - `remove()` and `replace()` return new `Framework` objects.
+
+**Allowed Files**
+- `src/mofbuilder/core/write.py`
+- `src/mofbuilder/core/defects.py`
+- `src/mofbuilder/core/framework.py`
+- `tests/test_core_write.py`
+- `tests/test_core_defects.py`
+- `tests/test_core_framework.py`
+- `WORKLOG.md` for required phase logging only
+- `STATUS.md` for phase/checkpoint/status updates only
+
+**Forbidden Files**
+- All files outside the allowed list are out of scope for Phase 6.
+- Explicitly forbidden: `src/mofbuilder/core/supercell.py`, `src/mofbuilder/core/optimizer.py`, `src/mofbuilder/core/builder.py`, `src/mofbuilder/core/net.py`, `src/mofbuilder/core/moftoplibrary.py`, `src/mofbuilder/io/cif_reader.py`, `src/mofbuilder/md/`, `database/`, `PLANS.md`, `ARCHITECTURE.md`, `AGENTS.md`, `CODEX_CONTEXT.md`, `README.md`, and `docs/`.
+- Must not yet change force-field generation contracts, generalize MD topology assembly, refactor `Framework` public methods beyond role-aware internal plumbing, or invent writer-local or defect-local role identifiers.
+
+**Architecture Invariants**
+- Preserve the locked pipeline: `MofTopLibrary.fetch(...)` -> `FrameNet.create_net(...)` -> `MetalOrganicFrameworkBuilder.load_framework()` -> `MetalOrganicFrameworkBuilder.optimize_framework()` -> `MetalOrganicFrameworkBuilder.make_supercell()` -> `MetalOrganicFrameworkBuilder.build()`.
+- Preserve graph states `G`, `sG`, `superG`, `eG`, and `cleaved_eG`.
+- Do not rename, reorder, merge, or add pipeline stages.
+- Keep responsibilities fixed: writer/framework own merged structure output and post-build synchronization, defects own defect operations, supercell remains responsible for propagated role metadata, and MD modules remain unchanged in this phase.
+- Keep `Framework.get_merged_data()` as the synchronization point after structural edits.
+- Preserve current object-lifetime semantics: `build()` returns `builder.framework`; `Framework.remove()` and `Framework.replace()` return new `Framework` objects; `Framework.solvate()`, `generate_linker_forcefield()`, `md_prepare()`, and `show()` mutate the current `Framework`.
+- Preserve the graph-centered architecture, existing geometry/data conventions, single-role behavior as the default/base case, and current public builder/framework/package interfaces.
+
+**Role Model Invariants**
+- Role identifiers remain the only topology classification mechanism.
+- `node_role_id` must continue to live on `FrameNet.G.nodes[n]["node_role_id"]`.
+- `edge_role_id` must continue to live on `FrameNet.G.edges[e]["edge_role_id"]`.
+- Downstream writer/defect code must consume graph-stored role ids and resolve role-specific metadata through the established registries and propagated graph metadata; it must not invent local role maps or recompute role ids.
+- Fragment registries remain `node_role_registry` and `edge_role_registry`.
+- Role identifiers must not be inferred from chemistry or replaced by writer-local or defect-local identifiers.
+- Single-role normalization remains the backward-compatible base case via `node:default` and `edge:default`.
+
+**Required Tests**
+- `scripts/run_tests.sh tests/test_core_write.py`
+- `scripts/run_tests.sh tests/test_core_defects.py`
+- `scripts/run_tests.sh tests/test_core_framework.py`
+- Regression tests proving current single-role merged data and defect behavior are unchanged.
+- One minimal heterogeneous-role test proving writer/defect code can consume role-specific node metadata after Phases 4-5 are complete.
+
+**Success Criteria**
+- Merged output and defect-handling paths work with node-role-specific metadata.
+- Single-role merged output remains stable.
+- `Framework.get_merged_data()` remains the synchronization point after structural edits.
+- `Framework.remove()` and `Framework.replace()` keep returning new `Framework` objects.
+- No force-field generation contract, MD topology assembly path, or public `Framework` API is broadened beyond role-aware internal plumbing.
+- No writer-local or defect-local role identifiers are introduced.
+
+**Stop Rule**
+- Stop immediately if Phase 6 work requires editing any forbidden file or changing module responsibilities.
+- Stop immediately if satisfying the phase requires changing force-field generation contracts, generalizing MD topology assembly, or repairing earlier-phase normalization/schema issues inside this phase.
+- Stop immediately if the work would refactor `Framework` public methods beyond role-aware internal plumbing or invent writer-local or defect-local role identifiers.
+- Stop immediately if the locked pipeline, graph-state names, public mutation semantics, or graph-stored role ownership rules would need to change.
+- If any schema, runtime, or invariant conflict is discovered, record it first in `WORKLOG.md` and `STATUS.md`, then stop before revising `PLANS.md`.
 
 ### Checkpoint P6.1 — implementation
 
-- Date:
-- Thread / branch:
-- Status: pending
-- Goal:
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Date: 2026-03-13
+- Thread / branch: `codex_record`
+- Status: complete
+- Goal: generalize merged-data assembly and defect XOO handling to resolve node-role-specific metadata while preserving single-role behavior and `Framework` mutation semantics
+- Phase gate checked against `PLANS.md`: yes; implementation remains limited to `src/mofbuilder/core/write.py`, `src/mofbuilder/core/defects.py`, `src/mofbuilder/core/framework.py`, `tests/test_core_write.py`, `tests/test_core_defects.py`, `tests/test_core_framework.py`, `WORKLOG.md`, and `STATUS.md`.
+- Files changed: `src/mofbuilder/core/write.py`, `src/mofbuilder/core/defects.py`, `tests/test_core_write.py`, `tests/test_core_defects.py`, `tests/test_core_framework.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: `test_get_merged_data_keeps_single_role_dummy_atom_behavior`, `test_writer_resolves_role_specific_dummy_and_xoo_metadata`, `test_remove_xoo_from_node_keeps_single_role_xoo_dict`, `test_make_unsaturated_vnode_xoo_dict_uses_role_specific_xoo_metadata`, `test_framework_get_merged_data_forwards_role_aware_metadata_to_writer`, `test_framework_remove_and_replace_return_new_framework_instances`
+- Tests run: `scripts/run_tests.sh tests/test_core_write.py` (passed: 4 tests); `scripts/run_tests.sh tests/test_core_defects.py` (passed: 5 tests); `scripts/run_tests.sh tests/test_core_framework.py` (passed: 5 tests, 5 existing `PytestUnknownMarkWarning` warnings for `pytest.mark.core`)
+- Decisions: kept the legacy scalar fast path intact in `MofWriter.get_merged_data()` by preserving the original global rename ordering whenever `dummy_atom_node_dict` is still a single-role layout dict; added role-aware resolution helpers in `write.py` and `defects.py` that read graph-stored `node_role_id` and accept either legacy scalar metadata or role-keyed metadata/registry entries without inventing new local role ids; left `src/mofbuilder/core/framework.py` source unchanged because its existing `get_merged_data()` synchronization path already forwarded `xoo_dict` and `dummy_atom_node_dict` verbatim, so only narrow plumbing/semantics tests were required there.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: `P6.2` — handoff
 
 ### Checkpoint P6.2 — handoff
 
-- Date:
-- Thread / branch:
-- Status: pending
+- Date: 2026-03-13
+- Thread / branch: `codex_record`
+- Status: complete
 - Goal: confirm writer/defect paths are stable before MD generalization
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Phase gate checked against `PLANS.md`: yes; Phase 6 remained limited to writer/defects/framework allowed files and did not modify builder, optimizer, supercell, metadata, topology parsing, MD modules, database files, or locked pipeline responsibilities.
+- Files changed: `src/mofbuilder/core/write.py`, `src/mofbuilder/core/defects.py`, `tests/test_core_write.py`, `tests/test_core_defects.py`, `tests/test_core_framework.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: `test_get_merged_data_keeps_single_role_dummy_atom_behavior`, `test_writer_resolves_role_specific_dummy_and_xoo_metadata`, `test_remove_xoo_from_node_keeps_single_role_xoo_dict`, `test_make_unsaturated_vnode_xoo_dict_uses_role_specific_xoo_metadata`, `test_framework_get_merged_data_forwards_role_aware_metadata_to_writer`, `test_framework_remove_and_replace_return_new_framework_instances`
+- Tests run: `scripts/run_tests.sh tests/test_core_write.py` (passed: 4 tests); `scripts/run_tests.sh tests/test_core_defects.py` (passed: 5 tests); `scripts/run_tests.sh tests/test_core_framework.py` (passed: 5 tests, 5 existing `PytestUnknownMarkWarning` warnings for `pytest.mark.core`)
+- Decisions: Phase 6 now lets merged-output assembly and defect XOO handling resolve node-role-specific metadata from graph-stored `node_role_id` while preserving the current single-role scalar path as the base case; `Framework.get_merged_data()` remains the sync point after structural edits, and `Framework.remove()` / `Framework.replace()` continue returning new `Framework` instances.
+- Conflicts / blockers: none; only pre-existing `pytest.mark.core` warning noise remains on the framework test path.
+- Handoff / next checkpoint: Phase 6 handoff complete; next checkpoint is `P7.0` in a new thread after reviewer acceptance.
 
 ## Phase 7 — Multi-Edge Force-Field and Simulation-Prep Support
 
@@ -760,18 +829,88 @@ Use this exact field set for every checkpoint subsection.
 
 ### Checkpoint P7.0 — before coding
 
-- Date:
-- Thread / branch:
-- Status: pending
+- Date: 2026-03-13
+- Thread / branch: `codex_record`
+- Status: contract generated
 - Goal: support multiple edge-role force-field paths at the currently supported
   level
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Phase gate checked against `PLANS.md`: yes; Phase 7 remains limited to `src/mofbuilder/md/linkerforcefield.py`, `src/mofbuilder/md/gmxfilemerge.py`, `src/mofbuilder/core/framework.py`, `tests/test_md_linkerforcefield.py`, `tests/test_md_gmxfilemerge.py`, `tests/test_core_framework.py`, and planner logging in `WORKLOG.md` / `STATUS.md`, with topology parsing, metadata schema, builder normalization, optimizer, supercell, writer, defects, bundled database, and broad force-field research work out of scope.
+- Files changed: `WORKLOG.md`, `STATUS.md`
+- Tests added: none
+- Tests run: none
+- Decisions: recorded the Phase 7 Phase Contract under `P7.0`; kept the current one-linker MD-prep path as the regression baseline, limited the phase to one force-field mapping/generation path per edge role plus multi-ITP topology merge support, and preserved the rule that this phase proves one minimal heterogeneous multi-edge path rather than broad heterogeneous chemistry support.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: `P7.1` — implementation
+
+**Phase Contract**
+
+- Phase name: `Phase 7 — Multi-Edge Force-Field and Simulation-Prep Support`
+
+**Goal**
+- Let simulation prep handle more than one linker/edge role.
+
+**Scope**
+- Support one force-field mapping/generation path per edge role.
+- Merge multiple linker ITP outputs into the generated topology.
+- Keep the current one-linker path unchanged.
+- Keep this phase limited to the currently supported MD-prep level; do not broaden the target beyond one minimal heterogeneous multi-edge path proven end to end.
+- Preserve `Framework.generate_linker_forcefield()` and `Framework.md_prepare()` as the user-facing orchestration points while keeping their current mutation semantics intact.
+
+**Allowed Files**
+- `src/mofbuilder/md/linkerforcefield.py`
+- `src/mofbuilder/md/gmxfilemerge.py`
+- `src/mofbuilder/core/framework.py`
+- `tests/test_md_linkerforcefield.py`
+- `tests/test_md_gmxfilemerge.py`
+- `tests/test_core_framework.py`
+- `WORKLOG.md` for required phase logging only
+- `STATUS.md` for phase/checkpoint/status updates only
+
+**Forbidden Files**
+- All files outside the allowed list are out of scope for Phase 7.
+- Explicitly forbidden: `src/mofbuilder/core/builder.py`, `src/mofbuilder/core/moftoplibrary.py`, `src/mofbuilder/core/net.py`, `src/mofbuilder/io/cif_reader.py`, `src/mofbuilder/core/optimizer.py`, `src/mofbuilder/core/supercell.py`, `src/mofbuilder/core/write.py`, `src/mofbuilder/core/defects.py`, `src/mofbuilder/core/node.py`, `src/mofbuilder/core/linker.py`, `src/mofbuilder/core/termination.py`, `src/mofbuilder/__init__.py`, `src/mofbuilder/cli.py`, `database/`, `PLANS.md`, `ARCHITECTURE.md`, `AGENTS.md`, `CODEX_CONTEXT.md`, `README.md`, and `docs/`.
+- Must not redesign topology parsing or metadata schema, refactor earlier phases "for cleanup", broaden scope into general force-field research problems, or claim broad heterogeneous chemistry support from one minimal successful path.
+
+**Architecture Invariants**
+- Preserve the locked pipeline: `MofTopLibrary.fetch(...)` -> `FrameNet.create_net(...)` -> `MetalOrganicFrameworkBuilder.load_framework()` -> `MetalOrganicFrameworkBuilder.optimize_framework()` -> `MetalOrganicFrameworkBuilder.make_supercell()` -> `MetalOrganicFrameworkBuilder.build()`.
+- Preserve graph states `G`, `sG`, `superG`, `eG`, and `cleaved_eG`.
+- Do not rename these methods, reorder pipeline steps, merge pipeline stages, introduce new top-level pipeline stages, or move responsibilities between modules.
+- Keep responsibilities fixed: `FrameNet` owns topology graph construction and topology role annotation; `MofTopLibrary` owns topology family metadata; `MetalOrganicFrameworkBuilder` owns fragment normalization and runtime role registries; `Optimizer` owns node/linker placement; `Supercell` owns supercell expansion; `Writer / Framework` own merged structure output and user-facing orchestration; `Defects` own defect operations; `MD modules` own simulation preparation.
+- Preserve current object-lifetime semantics: `build()` returns `builder.framework`; `Framework.remove()` and `Framework.replace()` return new `Framework` objects; `Framework.solvate()`, `generate_linker_forcefield()`, `md_prepare()`, and `show()` mutate the current `Framework`.
+- Keep the graph-centered architecture, staged build pipeline, topology-driven connectivity, and the rule that atomic coordinates are derived from optimized graph state.
+- Preserve the current one-linker MD-prep path unchanged as the single-role/base regression path for this phase.
+
+**Role Model Invariants**
+- Role identifiers are the only topology classification mechanism.
+- `node_role_id` must live on `FrameNet.G.nodes[n]["node_role_id"]`.
+- `edge_role_id` must live on `FrameNet.G.edges[e]["edge_role_id"]`.
+- Role identifiers must never be recomputed by downstream modules, replaced by local role maps, or inferred from chemistry.
+- Fragment registries must remain `node_role_registry` and `edge_role_registry`.
+- MD and framework code in this phase must consume graph-stored role ids and builder-owned registries rather than inventing force-field-local or framework-local role identifiers.
+- Single-role normalization remains the backward-compatible base case: the current one-linker path must continue to work when builder inputs normalize to one-entry `edge:default` registries.
+- This phase may generalize force-field mapping and topology merge behavior per edge role, but it must not redefine role ownership or back-propagate new role semantics into earlier pipeline stages.
+
+**Required Tests**
+- `scripts/run_tests.sh tests/test_md_linkerforcefield.py`
+- `scripts/run_tests.sh tests/test_md_gmxfilemerge.py`
+- `scripts/run_tests.sh tests/test_core_framework.py`
+- Regression tests proving the current single-linker MD-prep path is unchanged.
+- One minimal heterogeneous multi-edge test proving topology generation and MD setup wiring can succeed at the currently supported level.
+
+**Success Criteria**
+- At least one minimal heterogeneous multi-edge case can prepare simulation files at the currently supported level.
+- The current single-linker MD-prep path remains unchanged.
+- Force-field mapping/generation can proceed per edge role without introducing competing role stores.
+- Multiple linker ITP outputs can be merged into the generated topology on the supported path.
+- `Framework` continues to expose the same user-facing MD-prep workflow while delegating the actual simulation-prep work to the existing MD modules.
+- No topology-parsing, metadata-schema, builder, optimizer, supercell, writer, defects, or bundled-database changes are required to complete Phase 7.
+
+**Stop Rule**
+- Stop immediately if Phase 7 work requires editing any forbidden file or changing module responsibilities.
+- Stop immediately if satisfying the phase requires redesigning topology parsing, revisiting Phase 2 metadata schema, refactoring earlier phases "for cleanup", or broadening scope into general force-field research problems.
+- Stop immediately if the work would change the current one-linker MD-prep path, claim broad heterogeneous chemistry support beyond one minimal proven path, or invent local role identifiers outside the graph-plus-registry model.
+- Stop immediately if the locked pipeline, graph-state names, public APIs, or current `Framework` mutation semantics would need to change.
+- If any schema, runtime, or invariant conflict is discovered, record it first in `WORKLOG.md` and `STATUS.md`, then stop before revising `PLANS.md`.
 
 ### Checkpoint P7.1 — implementation
 

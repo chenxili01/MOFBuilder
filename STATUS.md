@@ -6,14 +6,14 @@ latest active checkpoint in `WORKLOG.md`.
 ## Current State
 
 - Roadmap: `PLANS.md` is frozen
-- Phase: Phase 5 — Role Propagation Through Supercell and Edge Graph
-- Checkpoint: `P5.2` — handoff complete
-- Status: complete
+- Phase: Phase 7 — Multi-Edge Force-Field and Simulation-Prep Support
+- Checkpoint: `P7.0` — before coding
+- Status: contract generated
 - Active thread / branch: `codex_record`
-- Next step: await reviewer acceptance for Phase 5 handoff; if accepted, start `P6.0` in a new thread
-- Last completed checkpoint: `P5.2`
+- Next step: implementation
+- Last completed checkpoint: `P6.2`
 - Blocking conflict: none
-- Verification: `scripts/run_tests.sh tests/test_core_supercell.py` passed (5 tests)
+- Verification: none for `P7.0` yet; latest completed runtime verification remains `scripts/run_tests.sh tests/test_core_write.py` passed (4 tests); `scripts/run_tests.sh tests/test_core_defects.py` passed (5 tests); `scripts/run_tests.sh tests/test_core_framework.py` passed (5 tests, 5 existing `PytestUnknownMarkWarning` warnings)
 - Last update: 2026-03-13
 
 ## Rules

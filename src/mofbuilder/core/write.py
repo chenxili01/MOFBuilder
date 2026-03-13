@@ -85,7 +85,74 @@ class MofWriter:
         self.residues_info = {}
         self.merged_data = None  #merged data of nodes, edges, terms
         self.merged_f_data = None  #merged fractional data of nodes, edges
+        self.node_names = []
         self._debug = False  #debug mode
+
+    def _resolve_node_role_id(self, G: nx.Graph, node_name: str) -> str:
+        if node_name in G.nodes():
+            return G.nodes[node_name].get("node_role_id") or "node:default"
+        return "node:default"
+
+    def _is_dummy_atom_layout_dict(self, metadata: Any) -> bool:
+        return isinstance(metadata, dict) and (
+            "dummy_res_len" in metadata
+            or "METAL_count" in metadata
+            or "HHO_count" in metadata
+            or "HO_count" in metadata
+            or "O_count" in metadata
+        )
+
+    def _is_xoo_index_dict(self, metadata: Any) -> bool:
+        return isinstance(metadata, dict) and all(
+            isinstance(key, (int, np.integer)) for key in metadata.keys())
+
+    def _resolve_node_dummy_atom_dict(
+        self,
+        G: nx.Graph,
+        node_name: str,
+        dummy_atom_node_dict: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if dummy_atom_node_dict is None:
+            return None
+        if self._is_dummy_atom_layout_dict(dummy_atom_node_dict):
+            return dummy_atom_node_dict
+
+        role_id = self._resolve_node_role_id(G, node_name)
+        role_entry = dummy_atom_node_dict.get(role_id)
+        if role_entry is None and role_id != "node:default":
+            role_entry = dummy_atom_node_dict.get("node:default")
+
+        if self._is_dummy_atom_layout_dict(role_entry):
+            return role_entry
+        if isinstance(role_entry, dict):
+            nested_dict = role_entry.get("dummy_atom_node_dict")
+            if self._is_dummy_atom_layout_dict(nested_dict):
+                return nested_dict
+        return None
+
+    def _resolve_node_xoo_dict(
+        self,
+        G: nx.Graph,
+        node_name: str,
+        xoo_dict: Optional[Dict[Any, Any]],
+    ) -> Dict[int, List[int]]:
+        if xoo_dict is None:
+            return {}
+        if self._is_xoo_index_dict(xoo_dict):
+            return xoo_dict
+
+        role_id = self._resolve_node_role_id(G, node_name)
+        role_entry = xoo_dict.get(role_id)
+        if role_entry is None and role_id != "node:default":
+            role_entry = xoo_dict.get("node:default")
+
+        if self._is_xoo_index_dict(role_entry):
+            return role_entry
+        if isinstance(role_entry, dict):
+            nested_dict = role_entry.get("xoo_dict")
+            if self._is_xoo_index_dict(nested_dict):
+                return nested_dict
+        return {}
 
     def _remove_xoo_from_node(
         self, G: nx.Graph, xoo_dict: Dict[int, List[int]]
@@ -93,14 +160,14 @@ class MofWriter:
         """Remove XOO rows from each node's f_points and set noxoo_f_points on each node."""
         eG = G.copy()
 
-        all_xoo_indices = []
-        for x_ind, oo_ind in xoo_dict.items():
-            all_xoo_indices.append(x_ind)
-            all_xoo_indices.extend(oo_ind)
-
         for n in eG.nodes():
             if pname(n) != "EDGE":
                 all_f_points = eG.nodes[n]["f_points"]
+                node_xoo_dict = self._resolve_node_xoo_dict(eG, n, xoo_dict)
+                all_xoo_indices = []
+                for x_ind, oo_ind in node_xoo_dict.items():
+                    all_xoo_indices.append(x_ind)
+                    all_xoo_indices.extend(oo_ind)
                 noxoo_f_points = np.delete(all_f_points,
                                            all_xoo_indices,
                                            axis=0)
@@ -176,6 +243,7 @@ class MofWriter:
         count = 0
         term_count = 0
         nodes_data = []
+        node_names = []
         terms_data = []
         edges_data = []
         for n in cG.nodes():
@@ -183,6 +251,7 @@ class MofWriter:
                 node_data = get_node_data(n, rG, sc_unit_cell)
                 cG.nodes[n]["data"] = node_data
                 nodes_data.append(node_data)
+                node_names.append(n)
                 #check if the node have terminations
                 if "term_c_points" in cG.nodes[n]:
                     for term_ind_key, c_positions in cG.nodes[n][
@@ -201,6 +270,7 @@ class MofWriter:
                 edges_data.append(edge_data)
 
         self.nodes_data = nodes_data
+        self.node_names = node_names
         self.edges_data = edges_data
         self.terms_data = terms_data
         self.cG = cG
@@ -212,11 +282,33 @@ class MofWriter:
         nodes_data = self.nodes_data
         edges_data = self.edges_data
         terms_data = self.terms_data
+        node_graph = self.cG if self.cG is not None else self.G
+        node_names = getattr(self, "node_names", [])
+        self.residues_info = {}
         if dummy_atom_node_dict is not None:
-            nodes_data = self._rename_node_name(nodes_data,
-                                                dummy_atom_node_dict)
+            if self._is_dummy_atom_layout_dict(dummy_atom_node_dict):
+                nodes_data = self._rename_node_name(nodes_data,
+                                                    dummy_atom_node_dict)
+            else:
+                renamed_nodes = []
+                for index, node_data in enumerate(nodes_data):
+                    node_name = node_names[index] if index < len(
+                        node_names) else None
+                    node_dummy_atom_dict = (
+                        self._resolve_node_dummy_atom_dict(
+                            node_graph, node_name, dummy_atom_node_dict)
+                        if node_name is not None else None)
+                    if node_dummy_atom_dict is None:
+                        renamed_nodes.append(node_data)
+                        continue
+                    renamed_nodes.append(
+                        self._rename_node_name([node_data],
+                                               node_dummy_atom_dict))
+                nodes_data = np.vstack(renamed_nodes) if renamed_nodes else np.empty(
+                    (0, 11))
         else:
-            nodes_data = np.vstack(nodes_data)
+            nodes_data = np.vstack(nodes_data) if len(
+                nodes_data) > 0 else np.empty((0, 11))
         edges_data = np.vstack(edges_data) if len(
             edges_data) > 0 else np.empty((0, 11))
         terms_data = np.vstack(terms_data) if len(
@@ -234,16 +326,33 @@ class MofWriter:
         terms_number = len(self.terms_data)
 
         if dummy_atom_node_dict is not None:
-            self.residues_info[
-                'METAL'] = nodes_number * dummy_atom_node_dict.get(
+            if not node_names and self._is_dummy_atom_layout_dict(
+                    dummy_atom_node_dict):
+                self.residues_info['METAL'] = nodes_number * dummy_atom_node_dict.get(
                     'METAL_count', 0)
-            self.residues_info[
-                'HHO'] = nodes_number * dummy_atom_node_dict.get(
+                self.residues_info['HHO'] = nodes_number * dummy_atom_node_dict.get(
                     'HHO_count', 0)
-            self.residues_info['HO'] = nodes_number * dummy_atom_node_dict.get(
-                'HO_count', 0)
-            self.residues_info['O'] = nodes_number * dummy_atom_node_dict.get(
-                'O_count', 0)
+                self.residues_info['HO'] = nodes_number * dummy_atom_node_dict.get(
+                    'HO_count', 0)
+                self.residues_info['O'] = nodes_number * dummy_atom_node_dict.get(
+                    'O_count', 0)
+            else:
+                for index, node_name in enumerate(node_names):
+                    if index >= nodes_number:
+                        break
+                    node_dummy_atom_dict = self._resolve_node_dummy_atom_dict(
+                        node_graph, node_name, dummy_atom_node_dict)
+                    if node_dummy_atom_dict is None:
+                        continue
+                    self.residues_info['METAL'] = self.residues_info.get(
+                        'METAL', 0) + node_dummy_atom_dict.get(
+                            'METAL_count', 0)
+                    self.residues_info['HHO'] = self.residues_info.get(
+                        'HHO', 0) + node_dummy_atom_dict.get('HHO_count', 0)
+                    self.residues_info['HO'] = self.residues_info.get(
+                        'HO', 0) + node_dummy_atom_dict.get('HO_count', 0)
+                    self.residues_info['O'] = self.residues_info.get(
+                        'O', 0) + node_dummy_atom_dict.get('O_count', 0)
         self.residues_info[';NODE'] = nodes_number  #ingnore
         self.residues_info['EDGE'] = edges_number
         self.residues_info['TNODE'] = terms_number

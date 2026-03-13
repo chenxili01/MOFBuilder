@@ -123,6 +123,39 @@ class TerminationDefectGenerator:
         #debug
         self._debug = False
 
+    def _resolve_node_role_id(self, G: nx.Graph, node_name: str) -> str:
+        if node_name in G.nodes():
+            return G.nodes[node_name].get("node_role_id") or "node:default"
+        return "node:default"
+
+    def _is_xoo_index_dict(self, metadata: Any) -> bool:
+        return isinstance(metadata, dict) and all(
+            isinstance(key, (int, np.integer)) for key in metadata.keys())
+
+    def _resolve_node_xoo_dict(
+        self,
+        xoo_dict: Optional[Dict[Any, Any]],
+        G: nx.Graph,
+        node_name: str,
+    ) -> Dict[int, List[int]]:
+        if xoo_dict is None:
+            return {}
+        if self._is_xoo_index_dict(xoo_dict):
+            return xoo_dict
+
+        role_id = self._resolve_node_role_id(G, node_name)
+        role_entry = xoo_dict.get(role_id)
+        if role_entry is None and role_id != "node:default":
+            role_entry = xoo_dict.get("node:default")
+
+        if self._is_xoo_index_dict(role_entry):
+            return role_entry
+        if isinstance(role_entry, dict):
+            nested_dict = role_entry.get("xoo_dict")
+            if self._is_xoo_index_dict(nested_dict):
+                return nested_dict
+        return {}
+
     def remove_items_or_terminate(
         self,
         res_idx2rm: Optional[List[int]] = None,
@@ -453,13 +486,15 @@ class TerminationDefectGenerator:
             matched_vnode_xind_dict.setdefault(n, []).append(xind)
 
         # Prepare exposed x-index list for each unsaturated vnode
-        xoo_keys = list(xoo_dict.keys())
         unsaturated_vnode_xind_dict = {}
         for vnode in unsaturated_nodes:
             if vnode not in eG.nodes():
                 # node not present in graph (may have been removed) -> treat as no exposed indices
                 unsaturated_vnode_xind_dict[vnode] = []
                 continue
+
+            vnode_xoo_dict = self._resolve_node_xoo_dict(xoo_dict, eG, vnode)
+            xoo_keys = list(vnode_xoo_dict.keys())
 
             if vnode in matched_vnode_xind_dict:
                 # exposed indices are those X keys not already matched for this node
@@ -492,6 +527,8 @@ class TerminationDefectGenerator:
             except Exception:
                 fpoints_len = 0
 
+            vnode_xoo_dict = self._resolve_node_xoo_dict(xoo_dict, eG, vnode)
+
             for xind in exposed_x_indices:
                 # validate x index
                 if not (0 <= xind < fpoints_len):
@@ -507,7 +544,7 @@ class TerminationDefectGenerator:
                 ))
 
                 # get associated OO indices (may be missing -> empty list)
-                oo_ind_in_vnode = xoo_dict.get(xind, [])
+                oo_ind_in_vnode = vnode_xoo_dict.get(xind, [])
                 if oo_ind_in_vnode:
                     # gather fractional arrays for those OO atoms and compute Cartesian coords in one call
                     try:
@@ -547,14 +584,14 @@ class TerminationDefectGenerator:
         xoo_dict = self.xoo_dict
         eG = G.copy()
 
-        all_xoo_indices = []
-        for x_ind, oo_ind in xoo_dict.items():
-            all_xoo_indices.append(x_ind)
-            all_xoo_indices.extend(oo_ind)
-
         for n in eG.nodes():
             if pname(n) != "EDGE":
                 all_f_points = eG.nodes[n]["f_points"]
+                node_xoo_dict = self._resolve_node_xoo_dict(xoo_dict, eG, n)
+                all_xoo_indices = []
+                for x_ind, oo_ind in node_xoo_dict.items():
+                    all_xoo_indices.append(x_ind)
+                    all_xoo_indices.extend(oo_ind)
                 noxoo_f_points = np.delete(all_f_points,
                                            all_xoo_indices,
                                            axis=0)
