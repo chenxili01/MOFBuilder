@@ -1488,6 +1488,7 @@ Use this exact field set for every checkpoint subsection.
 - Decisions: all phases 1-8 are recorded as complete and approved; this repository state is now the frozen baseline for future debugging, maintenance, and extension work; future work should begin from a new planning cycle rather than casually mutating the completed milestone; the role-aware architecture remains additive to the existing staged pipeline instead of replacing it
 - Conflicts / blockers: none
 - Handoff / next checkpoint: milestone freeze complete; any new work must start with a new plan and an explicitly scoped checkpoint outside the completed Phase 1-8 roadmap
+<<<<<<< HEAD
 
 ## Repair Log — 2026-03-13 Uncontrolled M2 Rollback
 
@@ -1565,3 +1566,5 @@ Use this exact field set for every checkpoint subsection.
 - Decisions: the reported startup failure was caused by a parser mismatch between `workflow/run.py` and the live `PLANS.md` heading structure, with an adjacent resume bug when `STATUS.md` phase titles differed from roadmap titles; both are now covered by a narrow unit-level regression
 - Conflicts / blockers: none
 - Handoff / next checkpoint: maintenance repair complete; runner is ready for the user to rerun `python3 workflow/run.py` in a real workflow session
+=======
+>>>>>>> parent of 3dadc6a (planning cpt)
