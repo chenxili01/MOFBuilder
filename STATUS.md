@@ -5,11 +5,11 @@ latest active checkpoint in `WORKLOG.md`.
 
 ## Current State
 
-- Phase: `Phase 2 — Additive Family/Template Role Metadata`
-- Checkpoint: `P2.2` — handoff
-- Status: complete
-- Next step: reviewer check
-- Execution mode: corrective replan / remediation pass
+- Phase: `Phase 1 - Planning/spec`
+- Checkpoint: `P1.0`
+- Status: pending
+- Next step: planner
+- Execution mode: automated phase runner
 - Active thread / branch: `codex_record`
 - Blocking conflict: none
 - Last update: 2026-03-13

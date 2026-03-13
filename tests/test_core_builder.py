@@ -377,7 +377,26 @@ def test_role_registries_consume_canonical_sidecar_through_moftoplibrary_seam(
     assert list(builder.node_role_specs) == ["node:VA", "node:CA"]
     assert list(builder.edge_role_specs) == ["edge:EA", "edge:EB"]
     assert builder.node_role_specs["node:VA"]["expected_connectivity"] == 4
-    assert builder.edge_role_specs["edge:EA"]["linker_connectivity"] == 2
+    assert builder.edge_role_specs["edge:EA"]["linker_connectivity"] == 4
+    assert builder.edge_role_specs["edge:EB"]["linker_connectivity"] == 4
+
+    builder.linker_center_data = np.array([["C"]], dtype=object)
+    builder.linker_center_X_data = np.array([["X"]], dtype=object)
+    builder.linker_outer_data = np.array([["O"]], dtype=object)
+    builder.linker_outer_X_data = np.array([["XO"]], dtype=object)
+    builder.linker_frag_length = 12.5
+    builder.linker_fake_edge = False
+
+    builder._update_edge_role_registry_data()
+
+    assert builder.edge_role_registry["edge:EA"]["linker_outer_data"] is (
+        builder.linker_outer_data
+    )
+    assert builder.edge_role_registry["edge:EB"]["linker_outer_data"] is (
+        builder.linker_outer_data
+    )
+    assert builder.edge_role_registry["edge:EA"]["linker_frag_length"] == 12.5
+    assert builder.edge_role_registry["edge:EB"]["linker_frag_length"] == 12.5
 
 
 @pytest.mark.core

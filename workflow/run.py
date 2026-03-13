@@ -4,403 +4,547 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
-import re
+import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
-from typing import Sequence
-
-THIS_DIR = pathlib.Path(__file__).resolve().parent
-if str(THIS_DIR) not in sys.path:
-    sys.path.insert(0, str(THIS_DIR))
-
-import run_phases as shared
+import traceback
+from datetime import datetime, timezone
+from typing import Any, Dict, Iterable, Literal, Optional
 
 
-PLAN_MODEL = "gpt-5.4"
-EXECUTOR_MODEL = "gpt-5.4"
-REVIEW_MODEL = "gpt-5.4"
-PLAN_EFFORT = "high"
-EXECUTOR_EFFORT = "medium"
-REVIEW_EFFORT = "high"
-
-RUNNER_STATE_FILE = shared.STATE_DIR / "run_state.json"
-SDK_RUNNER = shared.WORKFLOW_DIR / "codex_sdk_runner.mjs"
-
-PHASE_PATTERN = re.compile(r"^## (Phase (\d+) [^\n]+)$", re.MULTILINE)
-STATUS_PHASE_PATTERN = re.compile(r"^- Phase:\s+`([^`]+)`\s*$", re.MULTILINE)
+Step = Literal["planner", "executor", "reviewer"]
+VALID_STEPS = {"planner", "executor", "reviewer"}
 
 
-@dataclass(frozen=True)
-class Phase:
-    index: int
-    number: int
-    name: str
+# --------------------------------------------------
+# Paths
+# --------------------------------------------------
 
-    @property
-    def checkpoint(self) -> str:
-        return f"P{self.number}.0"
+SCRIPT_PATH = pathlib.Path(__file__).resolve()
+ROOT = SCRIPT_PATH.parent
+STATE_DIR = ROOT / "workflow"
+STATE_FILE = STATE_DIR / "state.json"
 
+PLANNER_FILE = ROOT / "PLANNER.md"
+EXECUTOR_FILE = ROOT / "EXECUTOR.md"
+REVIEWER_FILE = ROOT / "REVIEWER.md"
 
-@dataclass(frozen=True)
-class RoleConfig:
-    role: str
-    prompt_file: pathlib.Path
-    model: str
-    reasoning_effort: str
-
-
-@dataclass(frozen=True)
-class RunnerConfig:
-    no_git: bool
-    max_rounds: int
-    phase_limit: int | None
+STATUS_FILE = ROOT / "STATUS.md"
+WORKLOG_FILE = ROOT / "WORKLOG.md"
+REVIEW_FILE = ROOT / "REVIEW.md"
+PLANS_FILE = ROOT / "PLANS.md"
+CRASH_LOG_FILE = STATE_DIR / "crash.log"
 
 
-ROLE_CONFIGS = {
-    "planner": RoleConfig("planner", shared.PROMPT_FILES["planner"], PLAN_MODEL, PLAN_EFFORT),
-    "executor": RoleConfig(
-        "executor", shared.PROMPT_FILES["executor"], EXECUTOR_MODEL, EXECUTOR_EFFORT
-    ),
-    "reviewer": RoleConfig(
-        "reviewer", shared.PROMPT_FILES["reviewer"], REVIEW_MODEL, REVIEW_EFFORT
-    ),
+# --------------------------------------------------
+# Defaults
+# --------------------------------------------------
+
+DEFAULT_MODEL = os.environ.get("CODEX_MODEL", "gpt-5.4")
+DEFAULT_MAX_CONTEXT_CHARS = int(os.environ.get("WORKFLOW_MAX_CONTEXT_CHARS", "24000"))
+
+REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "approved": {"type": "boolean"},
+        "executor_can_proceed": {"type": "boolean"},
+        "summary": {"type": "string"},
+        "issues": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    },
+    "required": ["approved", "executor_can_proceed", "summary", "issues"],
+    "additionalProperties": False,
 }
 
 
-def parse_args(argv: Sequence[str] | None = None) -> RunnerConfig:
-    parser = argparse.ArgumentParser(description="Run the full PLANS.md phase workflow.")
+# --------------------------------------------------
+# Utilities
+# --------------------------------------------------
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def ensure_parent(path: pathlib.Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def read_text_if_exists(path: pathlib.Path, default: str = "") -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return default
+
+
+def write_text_atomic(path: pathlib.Path, text: str) -> None:
+    ensure_parent(path)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        delete=False,
+        dir=str(path.parent),
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    ) as tmp:
+        tmp.write(text)
+        tmp_path = pathlib.Path(tmp.name)
+    tmp_path.replace(path)
+
+
+def write_json_atomic(path: pathlib.Path, obj: Dict[str, Any]) -> None:
+    write_text_atomic(path, json.dumps(obj, indent=2, ensure_ascii=False) + "\n")
+
+
+def append_text(path: pathlib.Path, text: str) -> None:
+    ensure_parent(path)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(text)
+
+
+def append_markdown_section(path: pathlib.Path, label: str, text: str) -> None:
+    stamp = utc_now_iso()
+    block = f"\n\n## {label} ({stamp})\n\n{text.rstrip()}\n"
+    append_text(path, block)
+
+
+def tail_chars(text: str, limit: int, truncated_label: str) -> str:
+    if limit <= 0:
+        return f"[{truncated_label}: omitted]"
+    if len(text) <= limit:
+        return text
+    return f"[{truncated_label}: showing last {limit} chars]\n{text[-limit:]}"
+
+
+def section(name: str, text: str) -> str:
+    return f"===== {name} =====\n{text.strip()}\n"
+
+
+# --------------------------------------------------
+# Subprocess helpers
+# --------------------------------------------------
+
+def run_cmd(
+    cmd: Iterable[str],
+    *,
+    cwd: pathlib.Path = ROOT,
+    check: bool = True,
+    env: Optional[Dict[str, str]] = None,
+) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        list(cmd),
+        cwd=str(cwd),
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+    if check and result.returncode != 0:
+        command_str = " ".join(result.args)
+        raise RuntimeError(
+            f"Command failed ({result.returncode}): {command_str}\n"
+            f"STDOUT:\n{result.stdout}\n"
+            f"STDERR:\n{result.stderr}"
+        )
+    return result
+
+
+def command_exists(name: str) -> bool:
+    return shutil.which(name) is not None
+
+
+# --------------------------------------------------
+# Git helpers
+# --------------------------------------------------
+
+def git_diff(max_chars: int) -> str:
+    diff = run_cmd(["git", "diff"], check=True).stdout
+    return tail_chars(diff, max_chars, "git diff truncated")
+
+
+def git_commit(tag: str) -> str:
+    run_cmd(["git", "add", "-A"], check=True)
+
+    msg = f"workflow checkpoint: {tag}"
+    run_cmd(["git", "commit", "--allow-empty", "-m", msg], check=True)
+
+    sha = run_cmd(["git", "rev-parse", "HEAD"], check=True).stdout.strip()
+    if not sha:
+        raise RuntimeError("git rev-parse HEAD returned an empty SHA")
+
+    run_cmd(["git", "tag", "-f", tag], check=True)
+    return sha
+
+
+def verify_git_repo() -> None:
+    run_cmd(["git", "rev-parse", "--is-inside-work-tree"], check=True)
+
+
+# --------------------------------------------------
+# State
+# --------------------------------------------------
+
+def normalize_step(value: Any) -> Step:
+    if isinstance(value, str) and value in VALID_STEPS:
+        return value  # type: ignore[return-value]
+    return "planner"
+
+
+def load_state() -> Dict[str, Step]:
+    if not STATE_FILE.exists():
+        return {"step": "planner"}
+
+    try:
+        data = json.loads(read_text_if_exists(STATE_FILE, "{}"))
+    except json.JSONDecodeError:
+        print("Warning: malformed workflow/state.json; resetting to planner", file=sys.stderr)
+        return {"step": "planner"}
+
+    step = normalize_step(data.get("step"))
+    if step != data.get("step"):
+        print("Warning: invalid step in workflow/state.json; resetting to planner", file=sys.stderr)
+
+    return {"step": step}
+
+
+def save_state(step: Step) -> None:
+    write_json_atomic(STATE_FILE, {"step": step})
+
+
+# --------------------------------------------------
+# Context
+# --------------------------------------------------
+
+def read_context(max_context_chars: int) -> str:
+    # Split the budget across sections to avoid unbounded growth.
+    plans_budget = max(1500, max_context_chars // 5)
+    status_budget = max(1500, max_context_chars // 5)
+    worklog_budget = max(3000, max_context_chars // 4)
+    review_budget = max(2000, max_context_chars // 6)
+    diff_budget = max(3000, max_context_chars - (plans_budget + status_budget + worklog_budget + review_budget))
+
+    parts = [
+        section("PLANS.md", tail_chars(read_text_if_exists(PLANS_FILE, "[missing]"), plans_budget, "PLANS.md truncated")),
+        section("STATUS.md", tail_chars(read_text_if_exists(STATUS_FILE, "[missing]"), status_budget, "STATUS.md truncated")),
+        section("WORKLOG.md", tail_chars(read_text_if_exists(WORKLOG_FILE, "[missing]"), worklog_budget, "WORKLOG.md truncated")),
+        section("REVIEW.md", tail_chars(read_text_if_exists(REVIEW_FILE, "[missing]"), review_budget, "REVIEW.md truncated")),
+        section("GIT DIFF", git_diff(diff_budget)),
+    ]
+    return "\n\n".join(parts)
+
+
+# --------------------------------------------------
+# Prompt loading
+# --------------------------------------------------
+
+def load_prompt_file(path: pathlib.Path, title: str) -> str:
+    text = read_text_if_exists(path, "").strip()
+    if text:
+        return text
+    return (
+        f"You are the {title} for this repository workflow.\n"
+        f"The expected prompt file {path.name} is missing.\n"
+        f"Proceed conservatively using the repository context only."
+    )
+
+
+# --------------------------------------------------
+# Codex CLI
+# --------------------------------------------------
+
+def write_temp_schema() -> pathlib.Path:
+    ensure_parent(STATE_DIR / "dummy")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        delete=False,
+        dir=str(STATE_DIR),
+        prefix=".review-schema.",
+        suffix=".json",
+    ) as tmp:
+        json.dump(REVIEW_SCHEMA, tmp, indent=2)
+        tmp.write("\n")
+        return pathlib.Path(tmp.name)
+
+
+def build_codex_prompt(role_prompt: str, context: str, extra: str = "") -> str:
+    extra_block = f"\n\nADDITIONAL INSTRUCTIONS\n{extra.strip()}\n" if extra.strip() else ""
+    return (
+        f"{role_prompt.strip()}\n\n"
+        f"REPOSITORY CONTEXT\n{context.strip()}"
+        f"{extra_block}"
+    )
+
+
+def run_codex_exec(
+    prompt: str,
+    *,
+    model: str,
+    allow_edits: bool,
+    use_search: bool,
+    schema_path: Optional[pathlib.Path] = None,
+) -> str:
+    if not command_exists("codex"):
+        raise RuntimeError(
+            "Codex CLI was not found on PATH. Install it first, then sign in with ChatGPT or configure auth."
+        )
+
+    cmd = ["codex", "exec", "--model", model]
+
+    if allow_edits:
+        cmd.extend(["--full-auto"])
+    else:
+        cmd.extend(["--sandbox", "read-only", "--ask-for-approval", "never"])
+
+    if use_search:
+        cmd.append("--search")
+
+    if schema_path is not None:
+        cmd.extend(["--output-schema", str(schema_path)])
+
+    cmd.append(prompt)
+
+    result = run_cmd(cmd, check=True)
+    if result.stderr.strip():
+        print(result.stderr, file=sys.stderr, end="" if result.stderr.endswith("\n") else "\n")
+
+    return result.stdout.strip()
+
+
+# --------------------------------------------------
+# Review parsing
+# --------------------------------------------------
+
+def parse_review_result(text: str) -> Dict[str, Any]:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Reviewer returned invalid JSON: {e}") from e
+
+    required = {"approved", "executor_can_proceed", "summary", "issues"}
+    missing = required - set(data.keys())
+    if missing:
+        raise ValueError(f"Reviewer JSON missing required keys: {sorted(missing)}")
+
+    if not isinstance(data["approved"], bool):
+        raise ValueError("'approved' must be a boolean")
+    if not isinstance(data["executor_can_proceed"], bool):
+        raise ValueError("'executor_can_proceed' must be a boolean")
+    if not isinstance(data["summary"], str):
+        raise ValueError("'summary' must be a string")
+    if not isinstance(data["issues"], list) or not all(isinstance(x, str) for x in data["issues"]):
+        raise ValueError("'issues' must be a list of strings")
+
+    return data
+
+
+# --------------------------------------------------
+# Agents
+# --------------------------------------------------
+
+def run_planner(model: str, max_context_chars: int) -> str:
+    prompt_text = load_prompt_file(PLANNER_FILE, "planner")
+    ctx = read_context(max_context_chars)
+    prompt = build_codex_prompt(
+        prompt_text,
+        ctx,
+        extra=(
+            "Write a concise planning update. Update repository files if needed. "
+            "Be explicit about the next executor step."
+        ),
+    )
+    out = run_codex_exec(prompt, model=model, allow_edits=True, use_search=False)
+    append_markdown_section(WORKLOG_FILE, "planner", out)
+    return out
+
+
+def run_executor(model: str, max_context_chars: int) -> str:
+    prompt_text = load_prompt_file(EXECUTOR_FILE, "executor")
+    ctx = read_context(max_context_chars)
+    prompt = build_codex_prompt(
+        prompt_text,
+        ctx,
+        extra=(
+            "Make the required repository changes, run relevant commands/tests if appropriate, "
+            "and summarize exactly what changed."
+        ),
+    )
+    out = run_codex_exec(prompt, model=model, allow_edits=True, use_search=False)
+    append_markdown_section(WORKLOG_FILE, "executor", out)
+    return out
+
+
+def run_reviewer(model: str, max_context_chars: int) -> Dict[str, Any]:
+    prompt_text = load_prompt_file(REVIEWER_FILE, "reviewer")
+    ctx = read_context(max_context_chars)
+    schema_path = write_temp_schema()
+
+    try:
+        prompt = build_codex_prompt(
+            prompt_text,
+            ctx,
+            extra=(
+                "Review the current repository state and diff. "
+                "Return only a JSON object that matches the provided schema. "
+                "Set approved=true only if the phase is ready. "
+                "Set executor_can_proceed=true only if executor should continue next."
+            ),
+        )
+        raw = run_codex_exec(
+            prompt,
+            model=model,
+            allow_edits=False,
+            use_search=False,
+            schema_path=schema_path,
+        )
+    finally:
+        try:
+            schema_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    append_markdown_section(REVIEW_FILE, "reviewer-raw", raw)
+
+    try:
+        parsed = parse_review_result(raw)
+    except ValueError as e:
+        debug_payload = {
+            "approved": False,
+            "executor_can_proceed": False,
+            "summary": f"Reviewer output invalid: {e}",
+            "issues": [str(e)],
+            "raw_output": raw,
+        }
+        append_markdown_section(REVIEW_FILE, "reviewer-parse-error", json.dumps(debug_payload, indent=2))
+        return debug_payload
+
+    append_markdown_section(REVIEW_FILE, "reviewer-parsed", json.dumps(parsed, indent=2))
+    return parsed
+
+
+# --------------------------------------------------
+# Workflow
+# --------------------------------------------------
+
+def remediation_step(model: str, max_context_chars: int) -> None:
+    print("Review failed -> remediation planning")
+    run_planner(model=model, max_context_chars=max_context_chars)
+
+
+def workflow(
+    *,
+    initial_step: Optional[Step],
+    model: str,
+    max_context_chars: int,
+    no_git: bool,
+) -> None:
+    state = load_state()
+    step: Step = initial_step or state["step"]
+
+    print(f"Resuming at: {step}")
+
+    if not no_git:
+        verify_git_repo()
+
+    try:
+        if step == "planner":
+            print("Running planner...")
+            run_planner(model=model, max_context_chars=max_context_chars)
+            save_state("executor")
+            step = "executor"
+
+        if step == "executor":
+            print("Running executor...")
+            run_executor(model=model, max_context_chars=max_context_chars)
+            if not no_git:
+                sha = git_commit("executor-checkpoint")
+                print(f"Executor checkpoint: {sha}")
+            save_state("reviewer")
+            step = "reviewer"
+
+        if step == "reviewer":
+            print("Running reviewer...")
+            review = run_reviewer(model=model, max_context_chars=max_context_chars)
+
+            approved = bool(review.get("approved"))
+            executor_can_proceed = bool(review.get("executor_can_proceed"))
+
+            print(f"Review summary: {review.get('summary', '')}")
+
+            if approved:
+                if not no_git:
+                    sha = git_commit("phase-approved")
+                    print(f"Phase approved: {sha}")
+                save_state("planner")
+                return
+
+            if not no_git:
+                sha = git_commit("review-failure")
+                print(f"Review failure checkpoint: {sha}")
+
+            remediation_step(model=model, max_context_chars=max_context_chars)
+
+            next_step: Step = "executor" if executor_can_proceed else "planner"
+            save_state(next_step)
+            print(f"Next step: {next_step}")
+
+    except Exception as exc:
+        print(f"Workflow failure: {exc}", file=sys.stderr)
+        tb = traceback.format_exc()
+        append_markdown_section(CRASH_LOG_FILE, "workflow-crash", tb)
+
+        if not no_git:
+            try:
+                git_commit("workflow-crash")
+            except Exception as git_exc:
+                print(f"Crash checkpoint failed: {git_exc}", file=sys.stderr)
+
+        raise
+
+
+# --------------------------------------------------
+# CLI
+# --------------------------------------------------
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run planner/executor/reviewer workflow with Codex CLI.")
+    parser.add_argument(
+        "--step",
+        choices=sorted(VALID_STEPS),
+        help="Force the starting step instead of using workflow/state.json.",
+    )
+    parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help=f"Codex model to use. Default: {DEFAULT_MODEL}",
+    )
     parser.add_argument(
         "--no-git",
         action="store_true",
-        help="Skip automatic git checkpoint commits.",
+        help="Skip git commit/tag actions.",
     )
     parser.add_argument(
-        "--max-rounds",
+        "--max-context-chars",
         type=int,
-        default=20,
-        help="Maximum planner/executor/reviewer rounds allowed per phase.",
+        default=DEFAULT_MAX_CONTEXT_CHARS,
+        help=f"Maximum approximate context size. Default: {DEFAULT_MAX_CONTEXT_CHARS}",
     )
-    parser.add_argument(
-        "--phase-limit",
-        type=int,
-        default=None,
-        help="Optional number of remaining phases to run before stopping.",
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+
+    workflow(
+        initial_step=args.step,
+        model=args.model,
+        max_context_chars=max(4000, args.max_context_chars),
+        no_git=bool(args.no_git),
     )
-    args = parser.parse_args(argv)
-
-    if args.max_rounds <= 0:
-        raise shared.WorkflowError("--max-rounds must be a positive integer.")
-    if args.phase_limit is not None and args.phase_limit <= 0:
-        raise shared.WorkflowError("--phase-limit must be a positive integer when provided.")
-
-    return RunnerConfig(
-        no_git=args.no_git,
-        max_rounds=args.max_rounds,
-        phase_limit=args.phase_limit,
-    )
-
-
-def load_phases() -> list[Phase]:
-    plans_text = shared.read_required_text(shared.PLANS, "PLANS.md")
-    phases = []
-    for index, match in enumerate(PHASE_PATTERN.finditer(plans_text)):
-        phases.append(Phase(index=index, number=int(match.group(2)), name=match.group(1)))
-    if not phases:
-        raise shared.WorkflowError("No phase headings were found in PLANS.md.")
-    return phases
-
-
-def current_status_phase() -> str | None:
-    status_text = shared.read_text(shared.STATUS, default="")
-    match = STATUS_PHASE_PATTERN.search(status_text)
-    if not match:
-        return None
-    return match.group(1).strip()
-
-
-def find_phase_index(phases: list[Phase], phase_name: str | None) -> int:
-    if phase_name:
-        for phase in phases:
-            if phase.name == phase_name:
-                return phase.index
-    return 0
-
-
-def load_runner_state(phases: list[Phase]) -> dict[str, int]:
-    path = RUNNER_STATE_FILE
-    if path.exists():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            shared.backup_corrupt_state(path, "invalid JSON")
-        else:
-            if isinstance(data, dict):
-                phase_index = data.get("phase_index")
-                round_number = data.get("round_number")
-                if (
-                    isinstance(phase_index, int)
-                    and isinstance(round_number, int)
-                    and 0 <= phase_index <= len(phases)
-                    and round_number >= 1
-                ):
-                    return {"phase_index": phase_index, "round_number": round_number}
-            shared.backup_corrupt_state(path, "invalid runner state shape")
-
-    phase_index = find_phase_index(phases, current_status_phase())
-    return {"phase_index": phase_index, "round_number": 1}
-
-
-def save_runner_state(phase_index: int, round_number: int) -> None:
-    payload = {"phase_index": phase_index, "round_number": round_number}
-    shared.atomic_write_text(RUNNER_STATE_FILE, json.dumps(payload, indent=2) + "\n")
-
-
-def update_status_for_phase(phase: Phase) -> None:
-    status_text = shared.read_required_text(shared.STATUS, "STATUS.md")
-    replacements = {
-        "Phase": f"`{phase.name}`",
-        "Checkpoint": f"`{phase.checkpoint}`",
-        "Status": "pending",
-        "Next step": "planner",
-        "Execution mode": "automated phase runner",
-    }
-
-    updated = status_text
-    for key, value in replacements.items():
-        pattern = re.compile(rf"^- {re.escape(key)}:.*$", re.MULTILINE)
-        replacement = f"- {key}: {value}"
-        if pattern.search(updated):
-            updated = pattern.sub(replacement, updated, count=1)
-        else:
-            updated = updated.rstrip() + f"\n{replacement}\n"
-
-    if updated != status_text:
-        shared.atomic_write_text(shared.STATUS, updated)
-
-
-def build_role_prompt(phase: Phase, round_number: int, role_config: RoleConfig) -> str:
-    base_prompt = shared.read_required_text(role_config.prompt_file, f"{role_config.role} prompt").strip()
-    extra_lines = [
-        f"Workflow runner phase: {phase.name}",
-        f"Workflow runner round: {round_number}",
-        f"Repository root: {shared.ROOT}",
-    ]
-
-    if role_config.role == "planner":
-        extra_lines.append(
-            "Operate on the current phase only. If the latest review failed, produce a remediation plan for the same phase before any forward progress."
-        )
-    elif role_config.role == "executor":
-        extra_lines.append(
-            "Execute only the current phase. Do not advance to the next phase even if the implementation appears complete."
-        )
-    else:
-        extra_lines.extend(
-            [
-                "Return only one JSON object and do not edit REVIEW.md; the workflow runner will save your review.",
-                shared.REVIEW_JSON_INSTRUCTIONS,
-            ]
-        )
-
-    return f"{base_prompt}\n\nWorkflow runner instructions\n" + "\n".join(extra_lines)
-
-
-def write_temp_prompt(prompt: str) -> pathlib.Path:
-    temp_dir = shared.STATE_DIR / "tmp"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        "w",
-        encoding="utf-8",
-        dir=temp_dir,
-        prefix="prompt-",
-        suffix=".md",
-        delete=False,
-    ) as handle:
-        handle.write(prompt)
-        return pathlib.Path(handle.name)
-
-
-def run_role(phase: Phase, round_number: int, role: str) -> str:
-    role_config = ROLE_CONFIGS[role]
-    prompt_path = write_temp_prompt(build_role_prompt(phase, round_number, role_config))
-    try:
-        result = subprocess.run(
-            [
-                "node",
-                str(SDK_RUNNER),
-                "--cwd",
-                str(shared.ROOT),
-                "--prompt-file",
-                str(prompt_path),
-                "--model",
-                role_config.model,
-                "--reasoning-effort",
-                role_config.reasoning_effort,
-            ],
-            cwd=shared.ROOT,
-            text=True,
-            capture_output=True,
-            encoding="utf-8",
-            timeout=shared.REQUEST_TIMEOUT_SECONDS,
-            check=False,
-        )
-    finally:
-        prompt_path.unlink(missing_ok=True)
-
-    if result.returncode != 0:
-        raise shared.WorkflowError(
-            f"{role} SDK run failed with exit code {result.returncode}\n"
-            f"stdout:\n{result.stdout or '[empty]'}\n"
-            f"stderr:\n{result.stderr or '[empty]'}"
-        )
-
-    try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise shared.WorkflowError(
-            f"{role} SDK bridge returned invalid JSON.\nstdout:\n{result.stdout}"
-        ) from exc
-
-    text = payload.get("text", "")
-    if not isinstance(text, str) or not text.strip():
-        raise shared.WorkflowError(f"{role} SDK bridge returned empty text output.")
-    return text.strip()
-
-
-def run_reviewer(phase: Phase, round_number: int) -> shared.ReviewResult:
-    try:
-        return shared.parse_review_result(run_role(phase, round_number, "reviewer"))
-    except shared.ReviewerOutputError as exc:
-        corrected_prompt = build_role_prompt(phase, round_number, ROLE_CONFIGS["reviewer"])
-        corrected_prompt += (
-            "\n\nThe previous reviewer output was invalid JSON. "
-            f"Return only valid JSON that matches the required schema. Error: {exc}"
-        )
-        prompt_path = write_temp_prompt(corrected_prompt)
-        try:
-            result = subprocess.run(
-                [
-                    "node",
-                    str(SDK_RUNNER),
-                    "--cwd",
-                    str(shared.ROOT),
-                    "--prompt-file",
-                    str(prompt_path),
-                    "--model",
-                    REVIEW_MODEL,
-                    "--reasoning-effort",
-                    REVIEW_EFFORT,
-                ],
-                cwd=shared.ROOT,
-                text=True,
-                capture_output=True,
-                encoding="utf-8",
-                timeout=shared.REQUEST_TIMEOUT_SECONDS,
-                check=False,
-            )
-        finally:
-            prompt_path.unlink(missing_ok=True)
-
-        if result.returncode != 0:
-            raise shared.WorkflowError(
-                f"reviewer SDK retry failed with exit code {result.returncode}\n"
-                f"stdout:\n{result.stdout or '[empty]'}\n"
-                f"stderr:\n{result.stderr or '[empty]'}"
-            ) from exc
-
-        try:
-            payload = json.loads(result.stdout)
-        except json.JSONDecodeError as retry_exc:
-            raise shared.WorkflowError(
-                f"reviewer SDK retry returned invalid JSON.\nstdout:\n{result.stdout}"
-            ) from retry_exc
-
-        retry_text = payload.get("text", "")
-        if not isinstance(retry_text, str) or not retry_text.strip():
-            raise shared.WorkflowError("reviewer SDK retry returned empty text output.") from exc
-        return shared.parse_review_result(retry_text.strip())
-
-
-def record_reviewer_output(review: shared.ReviewResult) -> None:
-    shared.append_text_atomic(shared.REVIEW, shared.format_review_entry(review))
-
-
-def git_checkpoint(config: RunnerConfig, tag: str) -> None:
-    if config.no_git:
-        return
-    shared.git_commit(tag)
-
-
-def run_phase(config: RunnerConfig, phase: Phase, starting_round: int) -> bool:
-    update_status_for_phase(phase)
-    round_number = starting_round
-
-    while round_number <= config.max_rounds:
-        save_runner_state(phase.index, round_number)
-        print(f"Phase {phase.number} round {round_number}: planner")
-        run_role(phase, round_number, "planner")
-
-        print(f"Phase {phase.number} round {round_number}: executor")
-        run_role(phase, round_number, "executor")
-        git_checkpoint(config, f"phase-{phase.number:02d}-round-{round_number:02d}-executor")
-
-        print(f"Phase {phase.number} round {round_number}: reviewer")
-        review = run_reviewer(phase, round_number)
-        record_reviewer_output(review)
-
-        if review.approved:
-            git_checkpoint(config, f"phase-{phase.number:02d}-approved")
-            return True
-
-        round_number += 1
-
-    raise shared.WorkflowError(
-        f"Phase {phase.name} exceeded the maximum round count ({config.max_rounds})."
-    )
-
-
-def workflow(config: RunnerConfig) -> None:
-    phases = load_phases()
-    state = load_runner_state(phases)
-    phase_index = state["phase_index"]
-    round_number = state["round_number"]
-    completed = 0
-
-    if phase_index >= len(phases):
-        print("All phases already completed.")
-        return
-
-    while phase_index < len(phases):
-        phase = phases[phase_index]
-        print(f"Running {phase.name} starting at round {round_number}")
-        approved = run_phase(config, phase, round_number)
-        if not approved:
-            raise shared.WorkflowError(f"Phase {phase.name} did not reach approval.")
-
-        phase_index += 1
-        completed += 1
-        round_number = 1
-        save_runner_state(phase_index, round_number)
-
-        if config.phase_limit is not None and completed >= config.phase_limit:
-            return
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    try:
-        config = parse_args(argv)
-        workflow(config)
-    except shared.WorkflowError as exc:
-        shared.stderr(f"Workflow failure: {exc}")
-        return 1
-    except KeyboardInterrupt:
-        shared.stderr("Workflow interrupted by user.")
-        return 130
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -98,12 +98,12 @@ def _compat_family_role_metadata():
         "edge_roles": [
             {
                 "role_id": "edge:EA",
-                "linker_connectivity": 2,
+                "linker_connectivity": 4,
                 "topology_labels": ["EA"],
             },
             {
                 "role_id": "edge:EB",
-                "linker_connectivity": 2,
+                "linker_connectivity": 4,
                 "topology_labels": ["EB"],
             },
         ],

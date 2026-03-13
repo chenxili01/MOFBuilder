@@ -767,6 +767,8 @@ class MofTopLibrary:
         self,
         family_name: str,
         canonical_role_metadata: Dict[str, Any],
+        *,
+        family_linker_connectivity: int,
     ) -> Dict[str, Any]:
         """Compile passive canonical metadata into the existing builder seam."""
         node_roles = []
@@ -774,6 +776,12 @@ class MofTopLibrary:
 
         connectivity_rules = canonical_role_metadata["connectivity_rules"]
         slot_rules = canonical_role_metadata["slot_rules"]
+        compat_linker_connectivity = int(family_linker_connectivity)
+        if compat_linker_connectivity <= 0:
+            raise ValueError(
+                f"{family_name} linker connectivity must be positive to preserve "
+                "the existing builder seam"
+            )
 
         for role_alias, role_spec in canonical_role_metadata["roles"].items():
             role_entry = {
@@ -800,7 +808,12 @@ class MofTopLibrary:
                         f"slot_rules.{role_alias} to preserve the existing "
                         "builder seam"
                     )
-                role_entry["linker_connectivity"] = len(slot_rules[role_alias])
+                # The current builder/runtime seam hydrates linker payloads by
+                # comparing edge-role connectivity against the family-level
+                # linker topic from MOF_topology_dict. Preserve that legacy
+                # multitopic meaning here and keep per-edge slot arity only in
+                # canonical_role_metadata.
+                role_entry["linker_connectivity"] = compat_linker_connectivity
                 edge_roles.append(role_entry)
 
         return {
@@ -813,7 +826,7 @@ class MofTopLibrary:
     def _read_role_metadata(
         self, data_path: Optional[str] = None
     ) -> Dict[str, Dict[str, Any]]:
-        """Load optional sidecar role metadata for MOF families."""
+        """Load optional canonical sidecar role metadata for MOF families."""
         if data_path is None:
             data_path = self.data_path
 
@@ -849,12 +862,8 @@ class MofTopLibrary:
 
         normalized_metadata = {}
         for family_name, raw_family_metadata in family_metadata.items():
-            canonical_role_metadata = self._normalize_family_role_metadata(
+            normalized_metadata[family_name] = self._normalize_family_role_metadata(
                 family_name, raw_family_metadata
-            )
-            normalized_metadata[family_name] = self._build_compat_role_metadata(
-                family_name,
-                canonical_role_metadata,
             )
 
         return normalized_metadata
@@ -867,7 +876,7 @@ class MofTopLibrary:
         """
         if data_path is None:
             data_path = self.data_path
-        role_metadata_by_family = self._read_role_metadata(data_path)
+        canonical_role_metadata_by_family = self._read_role_metadata(data_path)
         if Path(data_path, "MOF_topology_dict").exists():
             mof_top_dict_path = str(Path(data_path, "MOF_topology_dict"))
             with open(mof_top_dict_path, "r") as f:
@@ -884,17 +893,26 @@ class MofTopLibrary:
             self.ostream.flush()
         mof_top_dict = {}
         for mof in mofs:
-            mof_name = mof.split()[0]
+            mof_fields = mof.split()
+            mof_name = mof_fields[0]
+            canonical_role_metadata = canonical_role_metadata_by_family.get(mof_name)
+            role_metadata = None
+            if canonical_role_metadata is not None:
+                role_metadata = self._build_compat_role_metadata(
+                    mof_name,
+                    canonical_role_metadata,
+                    family_linker_connectivity=int(mof_fields[3]),
+                )
             if mof_name not in mof_top_dict.keys():
                 mof_top_dict[mof_name] = {
-                    "node_connectivity": int(mof.split()[1]),
-                    "metal": [mof.split()[2]],
-                    "linker_topic": int(mof.split()[3]),
-                    "topology": mof.split()[-1],
-                    "role_metadata": role_metadata_by_family.get(mof_name),
+                    "node_connectivity": int(mof_fields[1]),
+                    "metal": [mof_fields[2]],
+                    "linker_topic": int(mof_fields[3]),
+                    "topology": mof_fields[-1],
+                    "role_metadata": role_metadata,
                 }
             else:
-                mof_top_dict[mof_name]["metal"].append(mof.split()[2])
+                mof_top_dict[mof_name]["metal"].append(mof_fields[2])
         self.mof_top_dict = mof_top_dict
 
     def get_role_metadata(
