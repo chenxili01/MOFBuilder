@@ -1579,3 +1579,190 @@ Use this exact field set for every checkpoint subsection.
   workflow control files; stale review state was replaced with a reset
   baseline; workflow step state was reset to `planner`.
 - Next step: run the planner from `Phase 1 - Planning/spec`, checkpoint `P1.0`.
+
+
+## planner (2026-03-13T23:32:27+00:00)
+
+**Review Summary**
+
+Latest canonical review in [REVIEW.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/REVIEW.md) is `APPROVED` for `Phase 1 - Planning/spec`, checkpoint `P1.0`, with `Can executor proceed?: yes`. There are no blocking findings, no scope violations, no architecture or compatibility risks, no required tests, and no required log/status corrections.
+
+**Unresolved Findings Carried Into The Contract**
+
+None. The contract records that there are no unresolved reviewer findings to remediate.
+
+**Generated Phase Contract**
+
+Inserted in [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/workflow/WORKLOG.md):
+
+```md
+## Phase 1 - Planning/spec
+
+### Checkpoint P1.0 — contract generated
+
+- Date: 2026-03-14
+- Thread / branch: `codex_record`
+- Status: complete
+- Goal: prepare the approved Phase 1 execution checkpoint with a review-aware
+  contract aligned to the canonical repository control docs.
+- Scope anchor: `../PLANS.md` Phase 1 only, plus local control-doc
+  synchronization in `workflow/WORKLOG.md` and `workflow/STATUS.md`.
+- Phase gate checked against latest review: yes; `../REVIEW.md` records
+  `Review decision: APPROVED` and `Can executor proceed?: yes` for
+  `Phase 1 - Planning/spec`, checkpoint `P1.0`.
+- Review result carried forward: no unresolved blocking findings, no scope
+  violations, no architecture / compatibility risks, no required tests, and no
+  required log/status corrections.
+- Decisions: corrected the stale local workflow state that still pointed to
+  maintenance checkpoint `M2.2`; the true active execution state is now the
+  repository-approved Phase 1 planner baseline at `P1.0`.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: implementation may proceed from `P1.0` under the
+  contract below; stop if work broadens beyond planning/spec or requires
+  runtime, test, or frozen-doc edits.
+
+**Phase Contract**
+
+- Phase name: `Phase 1 - Planning/spec`
+- Goal: produce or revise the active planning/spec artifact for this cycle
+  without authorizing or performing runtime implementation work.
+- Review context: latest canonical review is `APPROVED` with
+  `Can executor proceed?: yes` for `Phase 1 - Planning/spec` / `P1.0`; there
+  are no unresolved reviewer findings, so execution may proceed as a forward
+  planning/spec pass rather than remediation.
+- Scope: Phase 1 only, exactly as defined in `../PLANS.md`; planning/spec
+  synthesis, contract freezing, and control-doc synchronization only.
+- Allowed files:
+  `../PLANS.md` for read-only reference, `../AGENTS.md` for read-only
+  constraints, `../ARCHITECTURE.md` for read-only architecture locks,
+  `../CODEX_CONTEXT.md` for read-only repository context, `../REVIEW.md` for
+  read-only review status, `workflow/WORKLOG.md`, and `workflow/STATUS.md`
+- Forbidden files:
+  all source modules under `../src/`, all tests under `../tests/`,
+  `../PLANS.md`, `../ARCHITECTURE.md`, `../AGENTS.md`,
+  `../CODEX_CONTEXT.md`, `../REVIEW.md`, any bundled database files, and any
+  other repository files outside local status/worklog synchronization
+- Architecture invariants:
+  preserve the locked pipeline
+  `MofTopLibrary.fetch(...) -> FrameNet.create_net(...) ->
+  MetalOrganicFrameworkBuilder.load_framework() ->
+  MetalOrganicFrameworkBuilder.optimize_framework() ->
+  MetalOrganicFrameworkBuilder.make_supercell() ->
+  MetalOrganicFrameworkBuilder.build()`;
+  preserve graph states `G`, `sG`, `superG`, `eG`, `cleaved_eG`;
+  do not change module responsibility boundaries, public APIs, or the staged
+  build order
+- Role model invariants:
+  role identifiers remain the only topology classification mechanism;
+  `FrameNet.G.nodes[n]["node_role_id"]` and
+  `FrameNet.G.edges[e]["edge_role_id"]` remain canonical runtime storage;
+  registries remain `node_role_registry` and `edge_role_registry`;
+  no downstream recomputation or chemistry-derived role remapping is
+  authorized in this phase
+- Compatibility requirements:
+  preserve current single-role path as the default/base case;
+  preserve existing downstream consumer contract unless a later phase
+  explicitly authorizes coordinated changes;
+  additive metadata must not silently replace an existing runtime-facing
+  schema;
+  if a new schema is introduced later, it must be additive or isolated behind
+  a new field/accessor unless a later phase explicitly authorizes migration;
+  Phase 1 itself must not modify runtime schemas or downstream seams
+- Required tests:
+  none in this planning/spec phase; do not run implementation tests as a proxy
+  for broadening scope
+- Success criteria:
+  the active Phase 1 planning/spec contract remains aligned with `../PLANS.md`;
+  the latest review outcome is reflected accurately;
+  `workflow/STATUS.md` and `workflow/WORKLOG.md` are synchronized to
+  `Phase 1 - Planning/spec` / `P1.0`;
+  the next executor step is explicitly `implementation`;
+  no unresolved review findings are silently discarded
+- Stop rule:
+  stop immediately if the work would require editing runtime modules, tests,
+  frozen control docs, public APIs, bundled database files, or reopening
+  settled Round 1 / Round 2 decisions; Phase 1 does not authorize code
+  implementation or phase broadening
+```
+
+**Exact WORKLOG.md Modifications**
+
+Appended the block above to [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/workflow/WORKLOG.md). No existing entries were deleted.
+
+**Exact STATUS.md Modifications**
+
+Updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/workflow/STATUS.md) to:
+
+```md
+# STATUS.md
+
+Local workflow control status for the prompt-file fallback path.
+
+## Current State
+
+- Phase: `Phase 1 - Planning/spec`
+- Checkpoint: `P1.0`
+- Status: contract generated
+- Next step: implementation
+- Execution mode: automated phase runner / canonical control-doc sync
+- Active thread / branch: `codex_record`
+- Blocking conflict: none
+- Last update: 2026-03-14
+
+## Rules
+
+- Keep this file aligned with the local `workflow/WORKLOG.md` entries.
+- Do not expand source-code scope from this file.
+- Treat this checkpoint as the approved Phase 1 planning/spec baseline until a
+  new review or checkpoint update says otherwise.
+```
+
+Next executor step is `implementation`, constrained to the Phase 1 planning/spec boundary.
+
+
+## executor (2026-03-13T23:33:27+00:00)
+
+**Execution Preflight**
+
+Current phase is `Phase 1 - Planning/spec` at checkpoint `P1.0`. The goal in the recorded contract is planning/spec synchronization only, not runtime implementation.
+
+Allowed modifications were limited to [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/workflow/WORKLOG.md) and [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/workflow/STATUS.md). Key invariants were the locked pipeline, stable graph states `G/sG/superG/eG/cleaved_eG`, role-id storage invariants, single-role compatibility, and no source/test/database/frozen-doc edits. I stayed within that scope.
+
+**Implementation Approach**
+
+I reopened the required control docs, confirmed that `P1.0` explicitly forbids source and test changes, and treated this executor pass as an in-scope no-op handoff. Because the contract does not authorize runtime work, the correct implementation was to record completion and advance the workflow state for review.
+
+**Code Changes**
+
+No source-code changes were made. Only workflow control docs were updated:
+
+- [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/workflow/WORKLOG.md)
+- [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/workflow/STATUS.md)
+
+**Tests Added or Updated**
+
+None. The active Phase 1 contract explicitly requires no tests and forbids broadening into implementation verification.
+
+**WORKLOG.md Updates**
+
+Appended a new `Checkpoint P1.0 — executor implementation/handoff` entry in [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/workflow/WORKLOG.md) recording:
+
+- reread control docs
+- no runtime implementation performed
+- files changed
+- no tests run
+- no conflicts found
+- handoff to reviewer
+
+**STATUS.md Updates**
+
+Updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/workflow/STATUS.md) to:
+
+- keep phase `Phase 1 - Planning/spec`
+- keep checkpoint `P1.0`
+- set status to `complete`
+- set next step to `reviewer`
+
+**Any Conflicts or Reasons for Stopping**
+
+No schema or architecture conflict was discovered. I stopped at the Phase 1 boundary because the current contract does not authorize source, test, or database edits.

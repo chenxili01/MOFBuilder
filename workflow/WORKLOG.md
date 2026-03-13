@@ -83,3 +83,116 @@ Updated the local workflow runner to restore the M2 phase-heading compatibility 
 I also updated the fallback control docs to reflect the actual blocker and this executor pass in [`workflow/STATUS.md`#L7](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/workflow/STATUS.md#L7) and [`workflow/WORKLOG.md`#L32](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/workflow/WORKLOG.md#L32).
 
 Verification: a direct smoke import confirmed `load_phases()` returns Phase 1 through Phase 8 from the live plan and `find_phase_index("Phase 2 — Additive Family/Template Role Metadata")` returns `1`. The required runner command `scripts/run_tests.sh tests/test_workflow_run.py` still fails in this environment because the configured Python lacks `pytest`, so I could not complete repository-standard runtime verification.
+
+## Phase 1 - Planning/spec
+
+### Checkpoint P1.0 — contract generated
+
+- Date: 2026-03-14
+- Thread / branch: `codex_record`
+- Status: complete
+- Goal: prepare the approved Phase 1 execution checkpoint with a review-aware
+  contract aligned to the canonical repository control docs.
+- Scope anchor: `../PLANS.md` Phase 1 only, plus local control-doc
+  synchronization in `workflow/WORKLOG.md` and `workflow/STATUS.md`.
+- Phase gate checked against latest review: yes; `../REVIEW.md` records
+  `Review decision: APPROVED` and `Can executor proceed?: yes` for
+  `Phase 1 - Planning/spec`, checkpoint `P1.0`.
+- Review result carried forward: no unresolved blocking findings, no scope
+  violations, no architecture / compatibility risks, no required tests, and no
+  required log/status corrections.
+- Decisions: corrected the stale local workflow state that still pointed to
+  maintenance checkpoint `M2.2`; the true active execution state is now the
+  repository-approved Phase 1 planner baseline at `P1.0`.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: implementation may proceed from `P1.0` under the
+  contract below; stop if work broadens beyond planning/spec or requires
+  runtime, test, or frozen-doc edits.
+
+**Phase Contract**
+
+- Phase name: `Phase 1 - Planning/spec`
+- Goal: produce or revise the active planning/spec artifact for this cycle
+  without authorizing or performing runtime implementation work.
+- Review context: latest canonical review is `APPROVED` with
+  `Can executor proceed?: yes` for `Phase 1 - Planning/spec` / `P1.0`; there
+  are no unresolved reviewer findings, so execution may proceed as a forward
+  planning/spec pass rather than remediation.
+- Scope: Phase 1 only, exactly as defined in `../PLANS.md`; planning/spec
+  synthesis, contract freezing, and control-doc synchronization only.
+- Allowed files:
+  `../PLANS.md` for read-only reference, `../AGENTS.md` for read-only
+  constraints, `../ARCHITECTURE.md` for read-only architecture locks,
+  `../CODEX_CONTEXT.md` for read-only repository context, `../REVIEW.md` for
+  read-only review status, `workflow/WORKLOG.md`, and `workflow/STATUS.md`
+- Forbidden files:
+  all source modules under `../src/`, all tests under `../tests/`,
+  `../PLANS.md`, `../ARCHITECTURE.md`, `../AGENTS.md`,
+  `../CODEX_CONTEXT.md`, `../REVIEW.md`, any bundled database files, and any
+  other repository files outside local status/worklog synchronization
+- Architecture invariants:
+  preserve the locked pipeline
+  `MofTopLibrary.fetch(...) -> FrameNet.create_net(...) ->
+  MetalOrganicFrameworkBuilder.load_framework() ->
+  MetalOrganicFrameworkBuilder.optimize_framework() ->
+  MetalOrganicFrameworkBuilder.make_supercell() ->
+  MetalOrganicFrameworkBuilder.build()`;
+  preserve graph states `G`, `sG`, `superG`, `eG`, `cleaved_eG`;
+  do not change module responsibility boundaries, public APIs, or the staged
+  build order
+- Role model invariants:
+  role identifiers remain the only topology classification mechanism;
+  `FrameNet.G.nodes[n]["node_role_id"]` and
+  `FrameNet.G.edges[e]["edge_role_id"]` remain canonical runtime storage;
+  registries remain `node_role_registry` and `edge_role_registry`;
+  no downstream recomputation or chemistry-derived role remapping is
+  authorized in this phase
+- Compatibility requirements:
+  preserve current single-role path as the default/base case;
+  preserve existing downstream consumer contract unless a later phase
+  explicitly authorizes coordinated changes;
+  additive metadata must not silently replace an existing runtime-facing
+  schema;
+  if a new schema is introduced later, it must be additive or isolated behind
+  a new field/accessor unless a later phase explicitly authorizes migration;
+  Phase 1 itself must not modify runtime schemas or downstream seams
+- Required tests:
+  none in this planning/spec phase; do not run implementation tests as a proxy
+  for broadening scope
+- Success criteria:
+  the active Phase 1 planning/spec contract remains aligned with `../PLANS.md`;
+  the latest review outcome is reflected accurately;
+  `workflow/STATUS.md` and `workflow/WORKLOG.md` are synchronized to
+  `Phase 1 - Planning/spec` / `P1.0`;
+  the next executor step is explicitly `implementation`;
+  no unresolved review findings are silently discarded
+- Stop rule:
+  stop immediately if the work would require editing runtime modules, tests,
+  frozen control docs, public APIs, bundled database files, or reopening
+  settled Round 1 / Round 2 decisions; Phase 1 does not authorize code
+  implementation or phase broadening
+
+### Checkpoint P1.0 — executor implementation/handoff
+
+- Date: 2026-03-14
+- Thread / branch: `codex_record`
+- Status: complete
+- Goal: execute the active Phase 1 checkpoint strictly within the recorded
+  planning/spec contract.
+- Scope checked: yes; reread `../PLANS.md`, `../AGENTS.md`,
+  `../ARCHITECTURE.md`, `../CODEX_CONTEXT.md`, `workflow/STATUS.md`, and
+  `workflow/WORKLOG.md` before taking action.
+- Files changed: `workflow/WORKLOG.md`, `workflow/STATUS.md`
+- Tests added: none
+- Tests run: none; the active Phase 1 contract explicitly requires no tests
+  and forbids broadening into implementation verification.
+- Key decisions:
+  Phase 1 remains planning/spec only
+  no source, test, database, or frozen control-doc edits are authorized at
+  `P1.0`
+  this executor pass therefore performed no runtime implementation and only
+  recorded the in-scope no-op handoff
+- Conflicts / blockers: none discovered within the Phase 1 boundary
+- Handoff / next checkpoint: Phase 1 executor pass is complete; next step is
+  reviewer validation or an explicit checkpoint transition that authorizes a
+  later phase
