@@ -5,6 +5,7 @@ import numpy as np
 import networkx as nx
 import pytest
 
+from mofbuilder.core.builder import MetalOrganicFrameworkBuilder
 from mofbuilder.core.framework import Framework
 
 
@@ -58,6 +59,12 @@ class _FakeSolvationBuilder:
 
     def write_output(self, output_file="solvated_structure", format=None):
         self.output_calls.append((output_file, tuple(format or [])))
+
+
+def _edge_data(note):
+    return np.array([[note, f"{note}1", 1, "EDGE", 1, 0.0, 0.0, 0.0, 1.0, 0.0,
+                      note]],
+                    dtype=object)
 
 
 @pytest.mark.core
@@ -205,6 +212,331 @@ def test_framework_solvate_and_md_prepare(monkeypatch, tmp_path):
 
     assert fw.gmx_ff.top_path.endswith("system.top")
     assert fw.md_driver.gro_file.endswith("MOF-TEST_in_solvent.gro")
+
+
+@pytest.mark.core
+def test_framework_generate_linker_forcefield_keeps_single_role_path(
+    monkeypatch, tmp_path
+):
+    import mofbuilder.core.framework as fw_mod
+
+    calls = []
+
+    class FakeLinkerForceFieldGenerator:
+
+        def __init__(self, comm=None, ostream=None):
+            self.linker_ff_name = None
+            self.linker_residue_name = None
+            self.linker_charge = None
+            self.linker_multiplicity = None
+            self.linker_itp_path = None
+            self.dest_linker_molecule = "dest"
+
+        def generate_reconnected_molecule_forcefield(self, linker_mol_data):
+            calls.append({
+                "ff_name": self.linker_ff_name,
+                "residue_name": self.linker_residue_name,
+                "charge": self.linker_charge,
+                "multiplicity": self.linker_multiplicity,
+                "data": linker_mol_data.copy(),
+            })
+            self.linker_itp_path = Path(tmp_path, f"{self.linker_ff_name}.itp")
+
+    monkeypatch.setattr(fw_mod, "LinkerForceFieldGenerator",
+                        FakeLinkerForceFieldGenerator)
+
+    fw = Framework()
+    fw.target_directory = str(tmp_path)
+    fw.mof_family = "MOF-TEST"
+    fw.linker_connectivity = 2
+    fw.graph = nx.Graph()
+    fw.graph.add_node("EDGE_0",
+                      name="EDGE",
+                      note="E",
+                      edge_role_id="edge:default")
+    fw.mofwriter = _FakeMofWriter()
+    fw.mofwriter.edges_data = [_edge_data("C")]
+
+    fw.generate_linker_forcefield()
+
+    assert len(calls) == 1
+    assert calls[0]["ff_name"] == "Linker"
+    assert calls[0]["residue_name"] == "EDG"
+    assert calls[0]["charge"] == -2
+    assert calls[0]["multiplicity"] == 1
+    assert np.array_equal(calls[0]["data"], _edge_data("C"))
+    assert fw.linker_forcefield_outputs is None
+    assert fw.linker_ff_generators is None
+
+
+@pytest.mark.core
+def test_framework_md_prepare_supports_minimal_multi_edge_roles(
+    monkeypatch, tmp_path
+):
+    import mofbuilder.core.framework as fw_mod
+
+    generated_calls = []
+
+    class FakeLinkerForceFieldGenerator:
+
+        def __init__(self, comm=None, ostream=None):
+            self.linker_ff_name = None
+            self.linker_residue_name = None
+            self.linker_charge = None
+            self.linker_multiplicity = None
+            self.linker_itp_path = None
+            self.dest_linker_molecule = None
+
+        def generate_reconnected_molecule_forcefield(self, linker_mol_data):
+            generated_calls.append({
+                "ff_name": self.linker_ff_name,
+                "residue_name": self.linker_residue_name,
+                "charge": self.linker_charge,
+                "data": linker_mol_data.copy(),
+            })
+            self.linker_itp_path = Path(tmp_path, f"{self.linker_ff_name}.itp")
+
+    class FakeGromacsForcefieldMerger:
+        last_instance = None
+
+        def __init__(self):
+            FakeGromacsForcefieldMerger.last_instance = self
+            self.top_path = str(tmp_path / "system.top")
+
+        def generate_MOF_gromacsfile(self):
+            return None
+
+    class FakeOpenmmSetup:
+
+        def __init__(self, gro_file, top_file, comm=None, ostream=None):
+            self.gro_file = gro_file
+            self.top_file = top_file
+            self.system_pbc = False
+
+    monkeypatch.setattr(fw_mod, "LinkerForceFieldGenerator",
+                        FakeLinkerForceFieldGenerator)
+    monkeypatch.setattr(fw_mod, "GromacsForcefieldMerger",
+                        FakeGromacsForcefieldMerger)
+    monkeypatch.setattr(fw_mod, "OpenmmSetup", FakeOpenmmSetup)
+
+    fw = Framework()
+    fw.mof_family = "MOF-TEST"
+    fw.target_directory = str(tmp_path)
+    fw.data_path = str(Path(__file__).resolve().parent / "database")
+    fw.node_metal = "Zr"
+    fw.dummy_atom_node = False
+    fw.termination_name = "acetate"
+    fw.solvents = []
+    fw.residues_info = {"MOF": 1, "EDGE": 3}
+    fw.framework_data = np.array([["C", "C1", 1, "MOF", 1, 0.0, 0.0, 0.0, 1.0,
+                                   0.0, "C"]],
+                                 dtype=object)
+    fw.framework_fcoords_data = fw.framework_data.copy()
+    fw.graph = nx.Graph()
+    fw.graph.add_node("EDGE_0",
+                      name="EDGE",
+                      note="E",
+                      edge_role_id="edge:alpha")
+    fw.graph.add_node("EDGE_2",
+                      name="EDGE",
+                      note="E",
+                      edge_role_id="edge:beta")
+    fw.graph.add_node("EDGE_4",
+                      name="EDGE",
+                      note="E",
+                      edge_role_id="edge:alpha")
+    fw.mofwriter = _FakeMofWriter()
+    fw.mofwriter.edges_data = [_edge_data("A"), _edge_data("B"), _edge_data("A")]
+    fw.edge_role_registry = {
+        "edge:alpha": {
+            "linker_connectivity": 2,
+            "linker_charge": -2,
+        },
+        "edge:beta": {
+            "linker_connectivity": 4,
+            "linker_charge": -4,
+        },
+    }
+
+    fw.md_prepare()
+
+    assert [call["ff_name"] for call in generated_calls] == [
+        "Linker_edge_alpha",
+        "Linker_edge_beta",
+    ]
+    assert [call["residue_name"] for call in generated_calls] == ["E01", "E02"]
+    assert [call["charge"] for call in generated_calls] == [-2, -4]
+    merger = FakeGromacsForcefieldMerger.last_instance
+    assert merger.linker_names == ["Linker_edge_alpha", "Linker_edge_beta"]
+    assert merger.residues_info == {"MOF": 1, "E01": 2, "E02": 1}
+    assert merger.linker_name == "Linker_edge_alpha"
+    assert fw.gmx_ff.top_path.endswith("system.top")
+    assert fw.md_driver.gro_file.endswith("MOF-TEST_mofbuilder_output.gro")
+
+
+@pytest.mark.core
+def test_builder_build_hands_off_edge_role_registry_to_md_prepare(
+    monkeypatch, tmp_path
+):
+    import mofbuilder.core.framework as fw_mod
+
+    generated_calls = []
+
+    class FakeLinkerForceFieldGenerator:
+
+        def __init__(self, comm=None, ostream=None):
+            self.linker_ff_name = None
+            self.linker_residue_name = None
+            self.linker_charge = None
+            self.linker_multiplicity = None
+            self.linker_itp_path = None
+            self.dest_linker_molecule = None
+
+        def generate_reconnected_molecule_forcefield(self, linker_mol_data):
+            generated_calls.append({
+                "ff_name": self.linker_ff_name,
+                "residue_name": self.linker_residue_name,
+                "charge": self.linker_charge,
+                "data": linker_mol_data.copy(),
+            })
+            self.linker_itp_path = Path(tmp_path, f"{self.linker_ff_name}.itp")
+
+    class FakeGromacsForcefieldMerger:
+        last_instance = None
+
+        def __init__(self):
+            FakeGromacsForcefieldMerger.last_instance = self
+            self.top_path = str(tmp_path / "system.top")
+
+        def generate_MOF_gromacsfile(self):
+            return None
+
+    class FakeOpenmmSetup:
+
+        def __init__(self, gro_file, top_file, comm=None, ostream=None):
+            self.gro_file = gro_file
+            self.top_file = top_file
+            self.system_pbc = False
+
+    class FakeDefectGenerator:
+
+        def __init__(self):
+            self.updated_matched_vnode_xind = [("VA_0", 1, "EDGE_0")]
+            self.unsaturated_linkers = []
+            self.updated_unsaturated_nodes = []
+
+        def remove_items_or_terminate(self, res_idx2rm, cleaved_eG):
+            return cleaved_eG.copy()
+
+    def fake_get_merged_data(self, extra_graph=None):
+        self.mofwriter = _FakeMofWriter()
+        self.mofwriter.edges_data = [_edge_data("A"), _edge_data("B"),
+                                     _edge_data("A")]
+        self.framework_data = np.array([["C", "C1", 1, "MOF", 1, 0.0, 0.0,
+                                         0.0, 1.0, 0.0, "C"]],
+                                       dtype=object)
+        self.framework_fcoords_data = self.framework_data.copy()
+        self.residues_info = {"MOF": 1, "EDGE": 3}
+
+    monkeypatch.setattr(fw_mod, "LinkerForceFieldGenerator",
+                        FakeLinkerForceFieldGenerator)
+    monkeypatch.setattr(fw_mod, "GromacsForcefieldMerger",
+                        FakeGromacsForcefieldMerger)
+    monkeypatch.setattr(fw_mod, "OpenmmSetup", FakeOpenmmSetup)
+    monkeypatch.setattr(Framework, "get_merged_data", fake_get_merged_data)
+
+    builder = MetalOrganicFrameworkBuilder()
+    builder.mof_family = "MOF-TEST"
+    builder.data_path = str(Path(__file__).resolve().parent / "database")
+    builder.target_directory = str(tmp_path)
+    builder.node_metal = "Zr"
+    builder.dummy_atom_node = False
+    builder.net_spacegroup = "P1"
+    builder.net_cell_info = [10.0, 10.0, 10.0, 90.0, 90.0, 90.0]
+    builder.net_unit_cell = np.eye(3)
+    builder.node_connectivity = 4
+    builder.linker_connectivity = 2
+    builder.linker_frag_length = 1.5
+    builder.node_data = np.array([["Zr"]], dtype=object)
+    builder.dummy_atom_node_dict = {}
+    builder.termination_data = None
+    builder.frame_unit_cell = np.eye(3)
+    builder.frame_cell_info = [10.0, 10.0, 10.0, 90.0, 90.0, 90.0]
+    builder.supercell = [1, 1, 1]
+    builder.supercell_info = np.array([10.0, 10.0, 10.0, 90.0, 90.0, 90.0])
+    builder.termination = False
+    builder.add_virtual_edge = False
+    builder.vir_edge_max_neighbor = 0
+    builder.termination_X_data = None
+    builder.termination_Y_data = None
+    builder.termination_name = "acetate"
+    builder.clean_unsaturated_linkers = False
+    builder.update_node_termination = True
+    builder.linker_fake_edge = False
+    builder._debug = False
+    builder.edge_role_registry = {
+        "edge:alpha": {
+            "linker_connectivity": 2,
+            "linker_charge": -2,
+        },
+        "edge:beta": {
+            "linker_connectivity": 4,
+            "linker_charge": -4,
+        },
+    }
+    builder.eG = nx.Graph()
+    builder.eG.add_node("EDGE_0",
+                        name="EDGE",
+                        note="E",
+                        edge_role_id="edge:alpha")
+    builder.eG.add_node("EDGE_2",
+                        name="EDGE",
+                        note="E",
+                        edge_role_id="edge:beta")
+    builder.eG.add_node("EDGE_4",
+                        name="EDGE",
+                        note="E",
+                        edge_role_id="edge:alpha")
+    builder.cleaved_eG = builder.eG.copy()
+    builder.eG_index_name_dict = {1: "EDGE_0", 2: "EDGE_2", 3: "EDGE_4"}
+    builder.eG_matched_vnode_xind = []
+    builder.edgegraphbuilder = SimpleNamespace(
+        unsaturated_linkers=[],
+        unsaturated_nodes=[],
+        matched_vnode_xind=[],
+        xoo_dict={},
+        eG_index_name_dict=builder.eG_index_name_dict,
+    )
+    builder.defectgenerator = FakeDefectGenerator()
+    builder.net_optimizer = SimpleNamespace(sc_unit_cell=np.eye(3),
+                                            sc_unit_cell_inv=np.eye(3))
+    builder.frame_linker = SimpleNamespace(molecule=None)
+
+    monkeypatch.setattr(builder, "load_framework", lambda: None)
+    monkeypatch.setattr(builder, "optimize_framework", lambda: None)
+    monkeypatch.setattr(builder, "make_supercell", lambda: None)
+
+    fw = builder.build()
+
+    assert fw is builder.framework
+    assert fw.edge_role_registry == builder.edge_role_registry
+
+    fw.md_prepare()
+
+    assert [call["ff_name"] for call in generated_calls] == [
+        "Linker_edge_alpha",
+        "Linker_edge_beta",
+    ]
+    assert [call["residue_name"] for call in generated_calls] == ["E01", "E02"]
+    assert [call["charge"] for call in generated_calls] == [-2, -4]
+    merger = FakeGromacsForcefieldMerger.last_instance
+    assert merger.linker_names == [
+        "Linker_edge_alpha",
+        "Linker_edge_beta",
+    ]
+    assert merger.residues_info == {"MOF": 1, "E01": 2, "E02": 1}
+    assert fw.gmx_ff.top_path.endswith("system.top")
+    assert fw.md_driver.gro_file.endswith("MOF-TEST_mofbuilder_output.gro")
 
 
 @pytest.mark.core

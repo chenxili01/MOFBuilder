@@ -60,6 +60,7 @@ class GromacsForcefieldMerger:
         self.termination_name: Optional[str] = None
         self.linker_itp_dir: str = ''
         self.linker_name: Optional[str] = None
+        self.linker_names: Optional[Sequence[str]] = None
         self.residues_info: Optional[Dict[str, int]] = None
         self.mof_name: Optional[str] = None
         self.other_residues: List[str] = ['O', 'HO', 'HHO']
@@ -135,10 +136,16 @@ class GromacsForcefieldMerger:
 
         # Copy linker itp(s)
         if self.linker_itp_dir not in [None, '']:
+            linker_names = {
+                Path(str(name)).stem
+                for name in (self.linker_names or [])
+            }
+            if not linker_names and self.linker_name not in [None, '']:
+                linker_names = {Path(str(self.linker_name)).stem}
             for j in Path(self.linker_itp_dir).rglob('*.itp'):
                 itp_name = j.stem
                 dest_p = Path(target_itp_path, j.name)
-                if itp_name == Path(str(self.linker_name)).stem:
+                if itp_name in linker_names:
                     self._copy_file(str(j), str(dest_p))
 
         # Copy termination itp

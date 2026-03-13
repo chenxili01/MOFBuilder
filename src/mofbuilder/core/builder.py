@@ -741,6 +741,7 @@ class MetalOrganicFrameworkBuilder:
         self.framework.termination_Y_data = self.termination_Y_data
         self.framework.termination_name = self.termination_name
         self.framework.src_linker_molecule = self.frame_linker.molecule
+        self.framework.edge_role_registry = self.edge_role_registry
 
         self.framework.clean_unsaturated_linkers = self.clean_unsaturated_linkers
         self.framework.update_node_termination = self.update_node_termination

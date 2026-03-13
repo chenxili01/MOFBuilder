@@ -914,31 +914,93 @@ Use this exact field set for every checkpoint subsection.
 
 ### Checkpoint P7.1 — implementation
 
-- Date:
-- Thread / branch:
-- Status: pending
-- Goal:
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Date: 2026-03-13
+- Thread / branch: `codex_record`
+- Status: complete
+- Goal: support one force-field generation/mapping path per edge role while preserving the current single-linker MD-prep path
+- Phase gate checked against `PLANS.md`: yes; implementation stayed inside `src/mofbuilder/core/framework.py`, `src/mofbuilder/md/gmxfilemerge.py`, `tests/test_core_framework.py`, `tests/test_md_gmxfilemerge.py`, and the required logging files only.
+- Files changed: `src/mofbuilder/core/framework.py`, `src/mofbuilder/md/gmxfilemerge.py`, `tests/test_core_framework.py`, `tests/test_md_gmxfilemerge.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: `test_framework_generate_linker_forcefield_keeps_single_role_path`, `test_framework_md_prepare_supports_minimal_multi_edge_roles`, `test_get_itps_from_database_copies_multiple_linker_itps`, `test_generate_top_file_writes_role_specific_linker_counts`
+- Tests run: `scripts/run_tests.sh tests/test_md_linkerforcefield.py` (passed: 7 tests); `scripts/run_tests.sh tests/test_md_gmxfilemerge.py` (passed: 7 tests); `scripts/run_tests.sh tests/test_core_framework.py` (passed: 7 tests, 7 existing `PytestUnknownMarkWarning` warnings for `pytest.mark.core`)
+- Decisions: kept the legacy single-linker branch intact and only activated the new path when the built edge graph exposes more than one `edge_role_id` or role-keyed linker inputs are provided; derived role grouping from graph-stored `edge_role_id` values plus the existing writer edge ordering and used optional `edge_role_registry` entries only for per-role configuration overrides; normalized multi-role MD output into deterministic per-role linker file names and residue names, then passed role-specific linker includes and molecule counts to the GROMACS merger without changing topology parsing, builder normalization, optimizer, supercell, writer, defects, or database behavior.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: `P7.2` — handoff
 
 ### Checkpoint P7.2 — handoff
 
-- Date:
-- Thread / branch:
-- Status: pending
+- Date: 2026-03-13
+- Thread / branch: `codex_record`
+- Status: complete
 - Goal: confirm minimal heterogeneous multi-edge MD-prep support only
-- Phase gate checked against `PLANS.md`:
-- Files changed:
-- Tests added:
-- Tests run:
-- Decisions:
-- Conflicts / blockers:
-- Handoff / next checkpoint:
+- Phase gate checked against `PLANS.md`: yes; Phase 7 remained limited to framework MD orchestration, linker force-field merge support, and matching tests, with no edits to topology parsing, metadata schema, builder, optimizer, supercell, writer, defects, or bundled database files.
+- Files changed: `src/mofbuilder/core/framework.py`, `src/mofbuilder/md/gmxfilemerge.py`, `tests/test_core_framework.py`, `tests/test_md_gmxfilemerge.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: `test_framework_generate_linker_forcefield_keeps_single_role_path`, `test_framework_md_prepare_supports_minimal_multi_edge_roles`, `test_get_itps_from_database_copies_multiple_linker_itps`, `test_generate_top_file_writes_role_specific_linker_counts`
+- Tests run: `scripts/run_tests.sh tests/test_md_linkerforcefield.py` (passed: 7 tests); `scripts/run_tests.sh tests/test_md_gmxfilemerge.py` (passed: 7 tests); `scripts/run_tests.sh tests/test_core_framework.py` (passed: 7 tests, 7 existing `PytestUnknownMarkWarning` warnings for `pytest.mark.core`)
+- Decisions: Phase 7 now supports one minimal heterogeneous multi-edge MD-prep path by generating or mapping linker force fields per graph edge role, merging multiple linker `.itp` files into the GROMACS topology, and replacing the single `EDGE` residue count with role-specific molecule counts only on the multi-role path; the current single-linker workflow and `Framework.generate_linker_forcefield()` / `Framework.md_prepare()` mutation semantics remain unchanged on the base path.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: Phase 7 handoff complete; next checkpoint is `P8.0` in a new thread after reviewer acceptance.
+
+### Checkpoint P7.3 — review reopen contract addendum
+
+- Date: 2026-03-13
+- Thread / branch: `codex_record`
+- Status: complete
+- Goal: reopen Phase 7 only far enough to close the real `MetalOrganicFrameworkBuilder.build() -> Framework -> md_prepare()` edge-role-registry handoff gap reported in review
+- Phase gate checked against `PLANS.md`: yes; the Phase 7 reopen is narrowed to the locked builder-to-framework handoff seam in `src/mofbuilder/core/builder.py`, `src/mofbuilder/core/framework.py`, `tests/test_core_framework.py`, and planner logging in `WORKLOG.md` / `STATUS.md` only, with topology parsing, metadata schema, optimizer, supercell, writer, defects, database, and broader MD-module redesign still out of scope.
+- Files changed: `WORKLOG.md`, `STATUS.md`
+- Tests added: none
+- Tests run: none
+- Decisions: recorded the reviewer finding that Phase 7 framework/MD code can consume `edge_role_registry`, but the real locked pipeline does not pass `builder.edge_role_registry` into `Framework` during `MetalOrganicFrameworkBuilder.build()`; reopened Phase 7 as a minimal executor follow-up rather than a `PLANS.md` conflict because the missing handoff fits the existing builder-owned-registry and framework-consumer architecture; narrowed the reopen to one runtime integration fix plus one built-framework regression/integration test path.
+- Conflicts / blockers: no plan, schema, or architecture conflict discovered; the gap is a runtime integration omission at the existing builder -> framework handoff boundary.
+- Handoff / next checkpoint: `P7.4` — minimal executor fix and narrow built-framework regression verification
+
+**Phase 7 Contract Addendum — 2026-03-13 review reopen**
+
+- Goal: make `Framework` instances produced by `MetalOrganicFrameworkBuilder.build()` retain the builder-owned `edge_role_registry` so the existing Phase 7 MD-prep logic works on the real locked pipeline path.
+
+- Scope:
+- Add only the missing builder -> framework registry handoff in the existing `build()` flow.
+- Keep `Framework.md_prepare()` consuming the handed-off registry on the built-framework path; do not add new role semantics or new orchestration entry points.
+- Add one narrow regression/integration test proving the real built-framework path retains and uses `edge_role_registry`.
+- Keep the manual `Framework()` setup path and the current single-role path working exactly as they already do.
+
+- Allowed Files:
+- `src/mofbuilder/core/builder.py`
+- `src/mofbuilder/core/framework.py`
+- `tests/test_core_framework.py`
+- `WORKLOG.md`
+- `STATUS.md`
+
+- Forbidden Files:
+- All files outside the allowed list remain out of scope for this Phase 7 reopen.
+- Explicitly forbidden: `src/mofbuilder/md/linkerforcefield.py`, `src/mofbuilder/md/gmxfilemerge.py`, `src/mofbuilder/core/moftoplibrary.py`, `src/mofbuilder/core/net.py`, `src/mofbuilder/io/cif_reader.py`, `src/mofbuilder/core/optimizer.py`, `src/mofbuilder/core/supercell.py`, `src/mofbuilder/core/write.py`, `src/mofbuilder/core/defects.py`, `database/`, `PLANS.md`, `ARCHITECTURE.md`, `AGENTS.md`, `CODEX_CONTEXT.md`, `README.md`, and `docs/`.
+
+- Architecture Invariants:
+- Preserve the locked pipeline: `MofTopLibrary.fetch(...)` -> `FrameNet.create_net(...)` -> `MetalOrganicFrameworkBuilder.load_framework()` -> `MetalOrganicFrameworkBuilder.optimize_framework()` -> `MetalOrganicFrameworkBuilder.make_supercell()` -> `MetalOrganicFrameworkBuilder.build()`.
+- Preserve graph states `G`, `sG`, `superG`, `eG`, and `cleaved_eG`.
+- Do not rename methods, reorder steps, merge stages, add new top-level stages, or move responsibilities between modules.
+- Keep ownership unchanged: `MetalOrganicFrameworkBuilder` remains the owner of runtime role registries; `Framework` remains the post-build consumer/orchestrator.
+- Preserve current object-lifetime semantics: `build()` still returns `builder.framework`; `Framework.md_prepare()` still mutates the current `Framework`.
+
+- Role Model Invariants:
+- `edge_role_id` remains graph-stored role identity; `edge_role_registry` remains the builder-owned fragment/config registry.
+- `Framework` must receive the registry from the builder handoff rather than recomputing, re-normalizing, or inferring role mappings locally.
+- Single-role normalization remains the backward-compatible base case; the reopen must not change the existing one-entry `edge:default` behavior.
+
+- Required Tests:
+- `scripts/run_tests.sh tests/test_core_framework.py`
+- One narrow regression/integration test proving `MetalOrganicFrameworkBuilder.build()` produces a `Framework` that retains `edge_role_registry`.
+- One narrow regression/integration test proving `Framework.md_prepare()` uses that registry on the built-framework path rather than only on a manually assembled `Framework`.
+
+- Success Criteria:
+- A `Framework` returned from the real builder path retains the builder-populated `edge_role_registry`.
+- The existing Phase 7 MD-prep role-aware logic works on the builder-built runtime path without manual post-construction registry injection.
+- No topology, optimizer, supercell, defects, database, or broader MD-module scope is added.
+
+- Stop Rule:
+- Stop immediately if this reopen requires edits outside the allowed files, changes to module responsibilities, or any redesign of the builder/framework architecture.
+- Stop immediately if satisfying the handoff requires changing the locked pipeline or inventing a framework-local registry model.
+- If the handoff cannot be completed inside this boundary, record a contract conflict in `WORKLOG.md` and `STATUS.md` before proposing any `PLANS.md` revision.
 
 ## Phase 8 — Documentation and Example Sync
 
@@ -960,6 +1022,20 @@ Use this exact field set for every checkpoint subsection.
 - Decisions:
 - Conflicts / blockers:
 - Handoff / next checkpoint:
+
+### Checkpoint P7.4 — minimal executor fix and narrow built-framework regression verification
+
+- Date: 2026-03-13
+- Thread / branch: `codex_record`
+- Status: complete
+- Goal: pass `builder.edge_role_registry` through the real `MetalOrganicFrameworkBuilder.build()` handoff so built `Framework` instances retain the registry for the existing Phase 7 MD-prep path
+- Phase gate checked against `PLANS.md`: yes; execution remains limited to `src/mofbuilder/core/builder.py`, `src/mofbuilder/core/framework.py`, `tests/test_core_framework.py`, `WORKLOG.md`, and `STATUS.md`, with no MD-module redesign or broader Phase 7 scope expansion.
+- Files changed: `src/mofbuilder/core/builder.py`, `tests/test_core_framework.py`, `WORKLOG.md`, `STATUS.md`
+- Tests added: `test_builder_build_hands_off_edge_role_registry_to_md_prepare`
+- Tests run: baseline `scripts/run_tests.sh tests/test_core_framework.py` (passed: 7 tests, 7 existing `PytestUnknownMarkWarning` warnings) and `scripts/run_tests.sh tests/test_md_gmxfilemerge.py` (passed: 7 tests); post-fix `scripts/run_tests.sh tests/test_core_framework.py` (passed: 8 tests, 8 existing `PytestUnknownMarkWarning` warnings) and `scripts/run_tests.sh tests/test_md_gmxfilemerge.py` (passed: 7 tests)
+- Decisions: reviewer failure was confirmed as a runtime integration omission at the locked builder -> framework seam, not a Phase 7 architecture conflict; the minimal safe fix was one direct `edge_role_registry` handoff in `MetalOrganicFrameworkBuilder.build()` plus one narrow builder-produced regression that proves the returned `Framework` retains the registry and uses it in `md_prepare()` without manual injection; `src/mofbuilder/core/framework.py` required no source changes because its Phase 7 role-aware MD path already consumed the handed-off registry correctly.
+- Conflicts / blockers: none
+- Handoff / next checkpoint: Phase 7 reopen handoff complete; next checkpoint is `P8.0` in a new thread after reviewer acceptance
 
 ### Checkpoint P8.1 — implementation
 

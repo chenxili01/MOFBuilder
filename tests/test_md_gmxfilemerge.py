@@ -87,6 +87,70 @@ def test_generate_top_file_writes_model_top(tmp_path):
     assert "TST" in text
 
 
+def test_get_itps_from_database_copies_multiple_linker_itps(tmp_path):
+    merger = GromacsForcefieldMerger()
+
+    linker_dir = tmp_path / "generated_linkers"
+    linker_dir.mkdir(parents=True)
+    (linker_dir / "Linker_edge_alpha.itp").write_text(
+        "[ moleculetype ]\nALP 3\n", encoding="utf-8")
+    (linker_dir / "Linker_edge_beta.itp").write_text(
+        "[ moleculetype ]\nBET 3\n", encoding="utf-8")
+
+    merger.database_dir = "tests/database"
+    merger.target_dir = str(tmp_path)
+    merger.node_metal_type = "Zr"
+    merger.dummy_atom_node = False
+    merger.termination_name = "acetate"
+    merger.linker_itp_dir = str(linker_dir)
+    merger.linker_names = ["Linker_edge_alpha", "Linker_edge_beta"]
+
+    merger._get_itps_from_database(data_path="tests/database")
+
+    copied_names = sorted(
+        path.name for path in (tmp_path / "MD_run" / "itps").glob("*.itp"))
+    assert "Linker_edge_alpha.itp" in copied_names
+    assert "Linker_edge_beta.itp" in copied_names
+
+
+def test_generate_top_file_writes_role_specific_linker_counts(tmp_path):
+    merger = GromacsForcefieldMerger()
+
+    database_dir = Path("tests/database")
+    itp_dir = tmp_path / "itps"
+    itp_dir.mkdir(parents=True)
+    (itp_dir / "alpha.itp").write_text(
+        "[ atomtypes ]\n"
+        "AA  1  12.0\n"
+        "[ moleculetype ]\n"
+        "E01 3\n",
+        encoding="utf-8",
+    )
+    (itp_dir / "beta.itp").write_text(
+        "[ atomtypes ]\n"
+        "BB  1  13.0\n"
+        "[ moleculetype ]\n"
+        "E02 3\n",
+        encoding="utf-8",
+    )
+
+    merger.database_dir = str(database_dir)
+    merger.target_dir = str(tmp_path)
+
+    top_path = merger._generate_top_file(
+        itp_path=str(itp_dir),
+        data_path=str(database_dir),
+        res_info={"MOF": 1, "E01": 2, "E02": 1},
+        model_name="multi_role_mof",
+    )
+
+    text = top_path.read_text(encoding="utf-8")
+    assert '#include "itps/alpha.itp"' in text
+    assert '#include "itps/beta.itp"' in text
+    assert "E01" in text
+    assert "E02" in text
+
+
 def test_copy_mdps_copies_parameter_files(tmp_path):
     merger = GromacsForcefieldMerger()
 

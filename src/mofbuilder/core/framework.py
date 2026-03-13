@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import networkx as nx
@@ -14,7 +16,6 @@ import sys
 from .other import safe_copy
 from ..utils.environment import get_data_path
 from ..utils.fetch import fetch_pdbfile
-from pathlib import Path
 from .linker import FrameLinker
 from .write import MofWriter
 from ..io.pdb_reader import PdbReader
@@ -188,6 +189,9 @@ class Framework:
 
         self.residues_info = None  #dictionary of residue name and quantity
         self.solvents_dict = None  #dictionary of solvents info after solvation
+        self.edge_role_registry = None
+        self.linker_ff_generators = None
+        self.linker_forcefield_outputs = None
 
         #MLP energy minimization
         self.mlp_type = 'mace'  #default MLP type
@@ -332,6 +336,177 @@ class Framework:
         self.residues_info = self.mofwriter.residues_info
         self.linker_molecule_data = self.mofwriter.edges_data[
             0] if self.mofwriter.edges_data else None
+
+    def _is_edge_graph_node(self, node_name, node_data):
+        return (node_data.get("name") == "EDGE" or node_data.get("note") == "E"
+                or str(node_name).startswith("EDGE"))
+
+    def _collect_edge_role_records(self):
+        role_records = {}
+        if self.graph is None:
+            return role_records
+
+        role_registry = self.edge_role_registry or {}
+        edge_nodes = [(node_name, node_data)
+                      for node_name, node_data in self.graph.nodes(data=True)
+                      if self._is_edge_graph_node(node_name, node_data)]
+        for node_name, node_data in edge_nodes:
+            role_id = node_data.get("edge_role_id") or "edge:default"
+            if role_id not in role_records:
+                role_records[role_id] = {
+                    "role_id": role_id,
+                    "count": 0,
+                    "edge_name": node_name,
+                    "edge_data": None,
+                    "registry_entry": role_registry.get(role_id, {}),
+                }
+            role_records[role_id]["count"] += 1
+
+        edge_data_lines = list(getattr(self.mofwriter, "edges_data", []) or [])
+        for (node_name, node_data), edge_data in zip(edge_nodes, edge_data_lines):
+            role_id = node_data.get("edge_role_id") or "edge:default"
+            if role_records[role_id]["edge_data"] is None:
+                role_records[role_id]["edge_data"] = edge_data
+
+        for role_id, record in role_records.items():
+            registry_entry = record["registry_entry"]
+            if record["edge_data"] is None and registry_entry:
+                record["edge_data"] = registry_entry.get("linker_center_data")
+
+        return role_records
+
+    def _resolve_role_value(self, value, role_id):
+        if isinstance(value, Mapping):
+            return value.get(role_id)
+        return value
+
+    def _build_role_forcefield_name(self, role_id, role_index):
+        base_name = self._resolve_role_value(self.linker_ff_name, role_id)
+        if base_name is None:
+            base_name = f"{self.mof_family}_linker"
+        base_path = Path(str(base_name))
+        role_token = "".join(ch if ch.isalnum() else "_"
+                              for ch in str(role_id)).strip("_")
+        if not role_token:
+            role_token = f"role_{role_index + 1}"
+        return str(base_path.with_name(f"{base_path.stem}_{role_token}"))
+
+    def _build_role_residue_name(self, role_id, role_index, multi_role):
+        registry_entry = (self.edge_role_registry or {}).get(role_id, {})
+        residue_name = registry_entry.get("linker_residue_name")
+        if residue_name is not None:
+            return residue_name[:3]
+        if not multi_role:
+            return "EDG"
+        return f"E{role_index + 1:02d}"
+
+    def _build_md_residues_info(self):
+        residues_info = dict(self.residues_info or {})
+        if not self.linker_forcefield_outputs or len(
+                self.linker_forcefield_outputs) <= 1:
+            return residues_info
+        residues_info.pop("EDGE", None)
+        for output in self.linker_forcefield_outputs.values():
+            residues_info[output["residue_name"]] = output["count"]
+        return residues_info
+
+    def _generate_single_linker_forcefield(self):
+        self.linker_ff_gen = LinkerForceFieldGenerator(comm=self.comm,
+                                                       ostream=self.ostream)
+        self.linker_ff_generators = None
+        self.linker_forcefield_outputs = None
+        self.linker_ff_gen.linker_fake_edge = self.linker_fake_edge
+        self.linker_ff_gen.target_directory = self.target_directory
+        self.linker_ff_gen.linker_ff_name = self.linker_ff_name if self.linker_ff_name is not None else f"{self.mof_family}_linker"
+        self.linker_ff_gen.save_files = self.save_files
+        self.linker_ff_gen._debug = self._debug
+        self.linker_ff_gen.resp_charges = self.resp_charges
+        if self.provided_linker_itpfile is not None:
+            self.ostream.print_info(
+                "Linker force field is provided by the user, will map it directly."
+            )
+            self.ostream.flush()
+            self.linker_ff_gen.src_linker_molecule = self.src_linker_molecule
+            self.linker_ff_gen.src_linker_forcefield_itpfile = self.provided_linker_itpfile
+            self.linker_ff_gen.linker_residue_name = "EDG"
+            self.linker_ff_gen.map_existing_forcefield(
+                self.mofwriter.edges_data[0])
+            return
+
+        self.linker_ff_gen.linker_optimization = self.linker_reconnect_opt
+        self.linker_ff_gen.linker_residue_name = "EDG"
+        self.linker_ff_gen.optimize_drv = self.linker_reconnect_drv  # xtb or qm
+        self.linker_ff_gen.linker_charge = self.linker_charge if self.linker_charge is not None else -1 * int(
+            self.linker_connectivity)
+        self.linker_ff_gen.linker_multiplicity = self.linker_multiplicity if self.linker_multiplicity is not None else 1
+        self.ostream.print_info(
+            f"linker charge is set to {self.linker_ff_gen.linker_charge}")
+        self.ostream.print_info(
+            f"linker multiplicity is set to {self.linker_ff_gen.linker_multiplicity}"
+        )
+        self.ostream.flush()
+        if self.mofwriter.edges_data:
+            self.linker_ff_gen.generate_reconnected_molecule_forcefield(
+                self.mofwriter.edges_data[0])
+        self.reconnected_linker_molecule = self.linker_ff_gen.dest_linker_molecule
+
+    def _generate_multi_role_linker_forcefield(self, role_records):
+        self.linker_ff_generators = {}
+        self.linker_forcefield_outputs = {}
+        self.linker_ff_gen = None
+        self.reconnected_linker_molecule = None
+
+        for role_index, (role_id, record) in enumerate(role_records.items()):
+            linker_mol_data = record["edge_data"]
+            assert_msg_critical(
+                linker_mol_data is not None,
+                f"No linker geometry is available for edge role {role_id}.")
+            role_entry = record["registry_entry"] or {}
+            gen = LinkerForceFieldGenerator(comm=self.comm, ostream=self.ostream)
+            gen.linker_fake_edge = role_entry.get("linker_fake_edge",
+                                                  self.linker_fake_edge)
+            gen.target_directory = self.target_directory
+            gen.linker_ff_name = self._build_role_forcefield_name(
+                role_id, role_index)
+            gen.save_files = self.save_files
+            gen._debug = self._debug
+            gen.resp_charges = self.resp_charges
+            gen.linker_residue_name = self._build_role_residue_name(
+                role_id, role_index, multi_role=True)
+
+            src_linker_itpfile = self._resolve_role_value(
+                self.provided_linker_itpfile, role_id)
+            src_linker_molecule = self._resolve_role_value(
+                getattr(self, "src_linker_molecule", None), role_id)
+
+            if src_linker_itpfile is not None:
+                gen.src_linker_molecule = src_linker_molecule
+                gen.src_linker_forcefield_itpfile = src_linker_itpfile
+                gen.map_existing_forcefield(linker_mol_data)
+            else:
+                role_connectivity = role_entry.get("linker_connectivity",
+                                                   self.linker_connectivity)
+                gen.linker_optimization = self.linker_reconnect_opt
+                gen.optimize_drv = self.linker_reconnect_drv
+                gen.linker_charge = role_entry.get(
+                    "linker_charge", self.linker_charge if self.linker_charge
+                    is not None else -1 * int(role_connectivity))
+                gen.linker_multiplicity = role_entry.get(
+                    "linker_multiplicity", self.linker_multiplicity
+                    if self.linker_multiplicity is not None else 1)
+                gen.generate_reconnected_molecule_forcefield(linker_mol_data)
+
+            if self.linker_ff_gen is None:
+                self.linker_ff_gen = gen
+                self.reconnected_linker_molecule = gen.dest_linker_molecule
+
+            self.linker_ff_generators[role_id] = gen
+            self.linker_forcefield_outputs[role_id] = {
+                "ff_name": gen.linker_ff_name,
+                "residue_name": gen.linker_residue_name,
+                "count": record["count"],
+                "itp_path": gen.linker_itp_path,
+            }
 
     def _boundary_overlap_indices(self):
         boundary_overlap_list = []
@@ -499,43 +674,14 @@ class Framework:
             self.solvents = self.solvationbuilder.solvents_files
 
     def generate_linker_forcefield(self):
-        self.linker_ff_gen = LinkerForceFieldGenerator(comm=self.comm,
-                                                       ostream=self.ostream)
-        self.linker_ff_gen.linker_fake_edge = self.linker_fake_edge
-        self.linker_ff_gen.target_directory = self.target_directory
-        self.linker_ff_gen.linker_ff_name = self.linker_ff_name if self.linker_ff_name is not None else f"{self.mof_family}_linker"
-        self.linker_ff_gen.save_files = self.save_files
-        self.linker_ff_gen._debug = self._debug
-        self.linker_ff_gen.resp_charges = self.resp_charges
-        if self.provided_linker_itpfile is not None:
-            self.ostream.print_info(
-                "Linker force field is provided by the user, will map it directly."
-            )
-            self.ostream.flush()
-            self.linker_ff_gen.src_linker_molecule = self.src_linker_molecule
-            self.linker_ff_gen.src_linker_forcefield_itpfile = self.provided_linker_itpfile
-            self.linker_ff_gen.linker_residue_name = "EDG"
-            self.linker_ff_gen.map_existing_forcefield(
-                self.mofwriter.edges_data[0])
+        role_records = self._collect_edge_role_records()
+        multi_role_inputs = len(role_records) > 1 or isinstance(
+            self.provided_linker_itpfile, Mapping) or isinstance(
+                getattr(self, "src_linker_molecule", None), Mapping)
+        if not multi_role_inputs:
+            self._generate_single_linker_forcefield()
             return
-
-        self.linker_ff_gen.linker_optimization = self.linker_reconnect_opt
-        self.linker_ff_gen.linker_residue_name = "EDG"
-        self.linker_ff_gen.optimize_drv = self.linker_reconnect_drv  # xtb or qm
-        #self.linker_ff_gen.linker_ff_name = self.linker_ff_name if self.linker_ff_name is not None else f"{self.mof_family}_linker"
-        self.linker_ff_gen.linker_charge = self.linker_charge if self.linker_charge is not None else -1 * int(
-            self.linker_connectivity)
-        self.linker_ff_gen.linker_multiplicity = self.linker_multiplicity if self.linker_multiplicity is not None else 1
-        self.ostream.print_info(
-            f"linker charge is set to {self.linker_ff_gen.linker_charge}")
-        self.ostream.print_info(
-            f"linker multiplicity is set to {self.linker_ff_gen.linker_multiplicity}"
-        )
-        self.ostream.flush()
-        if self.mofwriter.edges_data:
-            self.linker_ff_gen.generate_reconnected_molecule_forcefield(
-                self.mofwriter.edges_data[0])
-        self.reconnected_linker_molecule = self.linker_ff_gen.dest_linker_molecule
+        self._generate_multi_role_linker_forcefield(role_records)
 
     def md_prepare(self):
         #write gro file for the framework
@@ -554,7 +700,12 @@ class Framework:
         self.gmx_ff.termination_name = self.termination_name
         self.gmx_ff.linker_itp_dir = self.target_directory
         self.gmx_ff.linker_name = self.linker_ff_gen.linker_ff_name
-        self.gmx_ff.residues_info = self.residues_info
+        if self.linker_forcefield_outputs:
+            self.gmx_ff.linker_names = [
+                output["ff_name"]
+                for output in self.linker_forcefield_outputs.values()
+            ]
+        self.gmx_ff.residues_info = self._build_md_residues_info()
         self.gmx_ff.mof_name = self.mof_family
         self.gmx_ff.generate_MOF_gromacsfile()
         if self.solvated_gro_file is None:
