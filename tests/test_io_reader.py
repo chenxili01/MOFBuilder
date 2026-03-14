@@ -71,6 +71,27 @@ def test_pdb_reader_parses_node_and_extracts_x_atoms():
     assert len(reader.X_data) > 0
 
 
+def test_pdb_reader_preserves_typed_attachment_groups(tmp_path):
+    pdb_path = tmp_path / "typed_node.pdb"
+    pdb_path.write_text(
+        "".join([
+            "HETATM    1 XA1  MOL A   1       0.000   0.000   0.000  1.00  0.00          C \n",
+            "HETATM    2 XB1  MOL A   1       1.000   0.000   0.000  1.00  0.00          C \n",
+            "HETATM    3 X1   MOL A   1       0.000   1.000   0.000  1.00  0.00          C \n",
+            "HETATM    4 C1   MOL A   1       0.000   0.000   1.000  1.00  0.00          C \n",
+        ]),
+        encoding="utf-8",
+    )
+
+    reader = PdbReader(filepath=str(pdb_path))
+    reader.read_pdb(recenter=False)
+
+    assert set(reader.attachment_data_by_type) == {"X", "XA", "XB"}
+    assert reader.attachment_data_by_type["XA"][0, 0] == "XA1"
+    assert reader.attachment_data_by_type["XB"][0, 0] == "XB1"
+    assert reader.X_data.shape[0] == 1
+
+
 def test_pdb_reader_process_node_pdb_generates_centered_arrays():
     reader = PdbReader(filepath=str(TESTDATA / "testnode.pdb"))
     reader.process_node_pdb()
@@ -79,6 +100,27 @@ def test_pdb_reader_process_node_pdb_generates_centered_arrays():
     assert reader.node_ccoords is not None
     assert reader.node_x_ccoords is not None
     assert reader.node_ccoords.shape[1] == 3
+
+
+def test_pdb_reader_process_node_pdb_preserves_typed_attachment_coords(tmp_path):
+    pdb_path = tmp_path / "typed_centered_node.pdb"
+    pdb_path.write_text(
+        "".join([
+            "HETATM    1 XA1  MOL A   1       0.000   0.000   0.000  1.00  0.00          C \n",
+            "HETATM    2 XB1  MOL A   1       2.000   0.000   0.000  1.00  0.00          C \n",
+            "HETATM    3 X1   MOL A   1       1.000   0.000   0.000  1.00  0.00          C \n",
+            "HETATM    4 C1   MOL A   1       1.000   1.000   0.000  1.00  0.00          C \n",
+        ]),
+        encoding="utf-8",
+    )
+
+    reader = PdbReader(filepath=str(pdb_path))
+    reader.com_target_type = "XA"
+    reader.process_node_pdb()
+
+    assert set(reader.node_attachment_ccoords_by_type) == {"X", "XA", "XB"}
+    np.testing.assert_allclose(reader.node_attachment_ccoords_by_type["XA"], [[0.0, 0.0, 0.0]])
+    np.testing.assert_allclose(reader.node_attachment_ccoords_by_type["XB"], [[2.0, 0.0, 0.0]])
 
 
 def test_gro_reader_reads_writer_generated_file(tmp_path):

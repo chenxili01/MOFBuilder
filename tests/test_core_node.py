@@ -97,4 +97,5 @@ def test_node_create_runs_on_test_node_file():
 
     assert node.node_data is not None
     assert node.node_X_data is not None
+    assert node.node_attachment_data_by_type["X"].shape[0] == node.node_X_data.shape[0]
     assert node.dummy_node_split_dict is not None

@@ -102,7 +102,7 @@ def test_linker_create_public_api_with_injected_molecule():
 
     assert linker.linker_center_data is not None
     assert linker.linker_center_X_data is not None
+    assert linker.linker_center_attachment_data_by_type["X"].shape[0] == linker.linker_center_X_data.shape[0]
     assert linker.linker_center_data.shape[1] == 11
-
 
 

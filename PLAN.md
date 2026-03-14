@@ -228,6 +228,37 @@ Representative targets include:
 This phase should eliminate the specific “typed atom dropped before runtime compilation”
 failure mode, but it must not yet redesign builder runtime payloads broadly.
 
+Execution plan for this phase only:
+
+1. Audit the reader/parser path in the Phase 2 allowed modules to find every place
+   typed attachment atoms can be normalized, filtered, or collapsed before fragment
+   loading completes.
+2. Update parsing and fragment-loading logic so attachment candidates preserve their
+   fragment-local `source_atom_type` instead of being reduced to literal `X` only.
+3. Keep legacy literal-`X` behavior working as a compatibility path while making sure
+   typed candidates such as `XA`, `XB`, or other valid attachment labels survive the
+   reader boundary unchanged enough for later builder-owned resolution.
+4. Add bounded regression tests that prove:
+   one typed attachment case is preserved through the reader/loading boundary, and
+   one legacy literal-`X` case still behaves as before.
+5. Limit Phase 2 scope to reader/parser preservation only:
+   do not introduce builder-owned runtime schema changes, resolved-anchor compilation,
+   or broad optimizer migration in this phase.
+
+Executor handoff constraints:
+
+- Allowed files: `mofbuilder/core/basic.py`, `mofbuilder/core/pdb_reader.py`,
+  `mofbuilder/core/node.py`, `mofbuilder/core/linker.py`, `tests/`, and workflow
+  markdown files only.
+- Required outcome: valid typed attachment atoms are no longer dropped, filtered,
+  or collapsed to literal `X` during parsing or fragment loading.
+- Required compatibility statement: legacy literal-`X` attachment families must still
+  load successfully after the preservation changes.
+- Required test coverage: at least one typed attachment preservation case and at least
+  one legacy literal-`X` compatibility case.
+- Stop rule: stop immediately if the work would require changing builder runtime
+  schemas, resolved-anchor payloads, framework behavior, or broad optimizer logic.
+
 ---
 
 # Phase 3 — Builder Typed Attachment Registry

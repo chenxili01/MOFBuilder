@@ -25,10 +25,12 @@ class PdbReader:
         com_target_type (str): Atom type used for center-of-mass calculation.
         data (np.ndarray | None): Parsed atom data as array;
             see row format below.
-        X_data (np.ndarray | None): Rows corresponding to atom type "X".
+        X_data (np.ndarray | None): Rows corresponding to source atom type "X".
+        attachment_data_by_type (dict[str, np.ndarray]): Attachment rows grouped by source atom type.
         node_atoms (np.ndarray | None): Atom types and labels for processed nodes.
         node_ccoords (np.ndarray | None): Coordinates for all node atoms, recentered.
         node_x_ccoords (np.ndarray | None): Coordinates for atoms of type "X", recentered.
+        node_attachment_ccoords_by_type (dict[str, np.ndarray]): Recentered attachment coordinates grouped by source atom type.
         _debug (bool): Toggle debug-level logging.
 
     Methods:
@@ -69,9 +71,11 @@ class PdbReader:
         self.data: Optional[np.ndarray] = None
 
         self.X_data: Optional[np.ndarray] = None
+        self.attachment_data_by_type: dict[str, np.ndarray] = {}
         self.node_atoms: Optional[np.ndarray] = None
         self.node_ccoords: Optional[np.ndarray] = None
         self.node_x_ccoords: Optional[np.ndarray] = None
+        self.node_attachment_ccoords_by_type: dict[str, np.ndarray] = {}
 
         self._debug: bool = False
 
@@ -173,25 +177,48 @@ class PdbReader:
                     f"Center of mass type {com_type} at {com}")
             self.data[:, 5:8] = self.data[:, 5:8].astype(float) - com
 
-        self.X_data = self.data[self.data[:, -1] == "X"]
+        self.attachment_data_by_type = self._group_attachment_data(self.data)
+        self.X_data = self.attachment_data_by_type.get("X")
+
+    @staticmethod
+    def _group_attachment_data(
+        data: Optional[np.ndarray],
+    ) -> dict[str, np.ndarray]:
+        """Group attachment rows by preserved source atom type."""
+        if data is None or len(data) == 0:
+            return {}
+
+        attachment_rows: dict[str, list[np.ndarray]] = {}
+        for row in data:
+            source_atom_type = str(row[-1]).strip()
+            if not source_atom_type:
+                continue
+            if not source_atom_type.startswith("X"):
+                continue
+            attachment_rows.setdefault(source_atom_type, []).append(row)
+
+        return {
+            source_atom_type: np.vstack(rows)
+            for source_atom_type, rows in attachment_rows.items()
+        }
 
     def expand_arr2data(
         self, arr: Optional[np.ndarray]
-    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], dict[str, np.ndarray]]:
         """Convert array of minimal records to standard data format.
 
         Args:
             arr (np.ndarray | list): Array/list of [atom_type, atom_label, x, y, z].
 
         Returns:
-            Tuple[np.ndarray | None, np.ndarray | None]:
-                All parsed data (as for self.data), and extracted rows where note is 'X'.
+            Tuple[np.ndarray | None, np.ndarray | None, dict[str, np.ndarray]]:
+                All parsed data, legacy literal-X rows, and attachment rows grouped by source atom type.
 
         Example:
             data, x_data = pdb_reader.expand_arr2data([["Fe", "Fe", 0.0, 0.0, 0.0]])
         """
         if arr is None or len(arr) == 0:
-            return None, None
+            return None, None, {}
         if isinstance(arr, list):
             arr = np.vstack(arr)
 
@@ -213,8 +240,9 @@ class PdbReader:
                 residue_number, value_x, value_y, value_z, spin, charge, note
             ])
         data = np.vstack(data)
-        X_data = data[data[:, -1] == 'X']
-        return data, X_data
+        attachment_data_by_type = self._group_attachment_data(data)
+        X_data = attachment_data_by_type.get("X")
+        return data, X_data, attachment_data_by_type
 
     def process_node_pdb(self) -> None:
         """Read the PDB and prepare node-centered atom sets.
@@ -241,12 +269,15 @@ class PdbReader:
         x_indices = [
             j for j in range(len(node_atoms)) if nn(node_atoms[j, 0]) == "X"
         ]
-        node_x_ccoords = self.data[x_indices, 5:8]
-        node_x_ccoords = node_x_ccoords.astype(float)
+        node_x_ccoords = self.data[x_indices, 5:8].astype(float)
         com_type_ccoords = node_ccoords[com_type_indices]
         com_type = np.mean(com_type_ccoords, axis=0)
         node_ccoords = node_ccoords - com_type
         node_x_ccoords = node_x_ccoords - com_type
+        node_attachment_ccoords_by_type = {
+            source_atom_type: rows[:, 5:8].astype(float) - com_type
+            for source_atom_type, rows in self.attachment_data_by_type.items()
+        }
 
         if self._debug:
             self.ostream.print_info(
@@ -259,6 +290,7 @@ class PdbReader:
         self.node_atoms = node_atoms
         self.node_ccoords = node_ccoords
         self.node_x_ccoords = node_x_ccoords
+        self.node_attachment_ccoords_by_type = node_attachment_ccoords_by_type
 
 
 if __name__ == "__main__":

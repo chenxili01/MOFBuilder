@@ -82,6 +82,7 @@ class FrameNode:
         self.node_com_type = "X"
 
         self.node_data = None
+        self.node_attachment_data_by_type: Dict[str, np.ndarray] = {}
         self.node_xyz_string = None
         self.nodeG = nx.Graph()
 
@@ -518,7 +519,7 @@ class FrameNode:
             self._write_dummy_node_split_dict()
             #self._copy_node_pdb2target()
 
-        self.node_data, self.node_X_data = self.pdbreader.expand_arr2data(
+        self.node_data, self.node_X_data, self.node_attachment_data_by_type = self.pdbreader.expand_arr2data(
             self.lines)
 
         if self.save_files:
