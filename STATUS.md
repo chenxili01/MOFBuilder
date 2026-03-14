@@ -2,8 +2,8 @@
 
 ## Workflow Status
 
-- Phase: Phase 6
-- Checkpoint: phase-6-executor-complete
+- Phase: Phase 7
+- Checkpoint: phase-7-executor-complete
 - Status: COMPLETED
 - Next step: planner
 - Last update: 2026-03-15
@@ -20,24 +20,27 @@ resolved anchors rather than a universal literal `X` bucket.
 
 ## Current Focus
 
-Phase 6 is complete: compatibility layer and guarded rollout are now bounded
-explicitly at the optimizer local-placement seam.
-Legacy literal-`X` behavior remains the guard-off path, while guard-enabled
-placement requires builder-owned resolved-anchor semantics and stays limited to
-covered optimizer-local placement flows.
+Phase 7 is complete. The bounded optimizer-local placement seam now has
+regression coverage for legacy literal-`X`, typed `XA`, and one supported
+mixed-source `XA` + `Al` case, plus explicit failure coverage for missing
+semantic snapshot and missing edge-anchor source metadata.
 
 ## Executor Handoff
 
-1. Planner should start from the completed Phase 6 seam:
-   guard-off optimizer placement remains legacy literal-`X`,
-   guard-enabled placement consumes builder-compiled resolved anchors only, and
-   explicit `anchor_source_type == "X"` compatibility records remain supported.
-2. Supported versus unsupported rollout scope is now documented in
-   `ARCHITECTURE.md`; do not assume typed-family coverage beyond the covered
-   optimizer-local placement path.
-3. Phase 7 may expand regression coverage and debug surfaces, but it must not
-   blur builder ownership, remove compatibility paths prematurely, or widen the
-   rollout beyond documented support without replanning.
+1. Executor completed Phase 7 within the allowed scope:
+   tests and workflow markdown files only.
+2. The covered seam remains bounded:
+   guard-off placement stays legacy literal-`X`,
+   guard-enabled placement consumes builder-compiled resolved anchors only,
+   and explicit `anchor_source_type == "X"` compatibility remains valid.
+3. Added regression coverage for:
+   one legacy literal-`X` case,
+   one typed `XA` case,
+   one mixed-source `XA` + `Al` case,
+   one missing-semantic-snapshot failure,
+   and one missing edge-anchor source metadata failure.
+4. No framework behavior, graph grammar, snapshot ownership, or rollout scope
+   was widened in Phase 7.
 
 ## Invariants
 

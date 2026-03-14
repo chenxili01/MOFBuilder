@@ -1,19 +1,17 @@
 # CHECKLIST.md
 
 Confirm:
-- Phase scope stayed documentation-only.
-- Typed attachment terminology is recorded: `slot_type`, `source_atom_type`,
-  `resolved anchor`, and `legacy literal-X compatibility`.
-- Control docs state the failure class directly:
-  valid typed attachment atoms must not be collapsed or dropped into a universal
-  literal-`X` assumption before builder-owned resolution.
-- Control docs state the ownership seam directly:
-  raw fragment atom typing is upstream input, builder resolves `source_atom_type`
-  from slot/path semantics and compiles resolved anchors, optimizer consumes only
-  those compiled anchors.
-- Control docs state the forbidden assumption directly:
-  fragment readers, builder compilation, and optimizer helpers must not treat
-  literal `X` as the only attachable atom class.
-- Control docs preserve migration compatibility:
-  legacy literal-`X` families remain valid, but they are not the universal
-  attachment model.
+- Phase scope stayed bounded to `mofbuilder/core/optimizer.py`, `mofbuilder/core/builder.py`,
+  `tests/`, and workflow markdown files.
+- Regression coverage includes the bounded seam:
+  legacy literal-`X` compatibility,
+  typed `XA`,
+  and one supported mixed-source case such as `XA` + `Al`.
+- Guard-enabled optimizer placement without an
+  `OptimizationSemanticSnapshot` fails explicitly.
+- Missing or unresolved resolved-anchor metadata still fails explicitly and
+  explainably rather than through geometry-first behavior.
+- Builder remains the only owner of slot/path legality and
+  `source_atom_type` resolution; optimizer consumes compiled anchors only.
+- Workflow docs state covered support honestly and do not imply broader typed-family
+  rollout than the current seam actually implements.

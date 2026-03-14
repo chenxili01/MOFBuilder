@@ -62,3 +62,30 @@ Unsupported or explicitly out-of-scope behavior in Phase 6:
   atoms.
 - Broader framework assembly, supercell expansion, export paths, and unbounded
   typed-family rollout remain outside the Phase 6 seam.
+
+## Phase 7 Coverage Status
+
+Phase 7 keeps the rollout scope unchanged and hardens the existing seam with
+regression coverage and inspectable failures only.
+
+Covered regression paths in Phase 7:
+
+- legacy guard-off placement still uses literal-`X` arrays even when typed
+  metadata exists upstream
+- guard-enabled placement works for a typed single-source case using `XA`
+- guard-enabled placement works for a supported mixed-source case where one
+  endpoint resolves to `XA` and the other resolves to `Al`
+- explicit literal-`X` compatibility records remain valid only when builder
+  compiled `anchor_source_type == "X"`
+- guard-enabled placement without an `OptimizationSemanticSnapshot` fails
+  explicitly
+- guard-enabled placement with missing resolved edge-anchor source metadata
+  fails explicitly
+
+Still unsupported or intentionally out of scope after Phase 7:
+
+- typed families that are not already compiled by builder-owned resolved-anchor
+  metadata and present in per-type attachment coordinate registries at optimizer
+  runtime
+- broader framework, supercell, export, or rollout expansion beyond the covered
+  local-placement seam

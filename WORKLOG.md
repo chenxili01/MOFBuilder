@@ -468,3 +468,75 @@ The optimizer rollout decision is now explicit in [optimizer.py](/Users/chenxili
 The workflow docs are updated to close Phase 6: [ARCHITECTURE.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/ARCHITECTURE.md#L39) now states the supported and unsupported rollout scope honestly, [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md#L5) is marked `COMPLETED` for Phase 6 with next step `planner`, and [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md#L408) has the append-only executor entry.
 
 Validation: `python -m compileall src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py` passed. `python -m pytest -q tests/test_core_optimizer.py -k "place_edge_in_net or compile_role_aware_initial_rotations"` could not run because the active interpreter does not have `pytest` installed.
+
+
+## planner-run
+
+- Timestamp: 2026-03-14T23:51:31+00:00
+
+Active phase is `Phase 7`. I updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) to move the workflow to executor handoff:
+
+- checkpoint: `phase-7-plan-generated`
+- status: `READY FOR EXECUTOR`
+- next step: `executor`
+
+The plan is bounded to Phase 7 only: add regression coverage for legacy `X`, typed `XA`, and supported mixed-source cases; tighten explicit semantic/debug failures around missing snapshot/resolved-anchor/per-type-coordinate inputs; document supported versus unsupported families honestly; and stop before any framework, graph grammar, snapshot-ownership, or rollout-scope changes. No production code was implemented.
+
+
+## executor-run
+
+- Timestamp: 2026-03-15T00:00:00+00:00
+
+Implemented `Phase 7` only: hardened the existing guarded optimizer-local
+placement seam with bounded regression coverage, explicit semantic-failure
+coverage, and honest handoff docs.
+
+Changed files:
+
+- [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py)
+- [ARCHITECTURE.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/ARCHITECTURE.md)
+- [CHECKLIST.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/CHECKLIST.md)
+- [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md)
+- [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md)
+
+What changed:
+
+- Added a bounded optimizer regression covering a supported mixed-source
+  resolved-anchor path where one endpoint uses `XA` and the other uses `Al`.
+- Added explicit optimizer failure coverage for the guarded path when
+  `place_edge_in_net()` is called without an `OptimizationSemanticSnapshot`.
+- Added explicit optimizer failure coverage for missing edge-anchor source
+  metadata so unresolved edge-side anchor typing fails semantically rather than
+  through later geometry behavior.
+- Documented the honest Phase 7 coverage boundary in `ARCHITECTURE.md`,
+  including the exact supported regression cases and the still-unsupported
+  typed-family rollout beyond the local-placement seam.
+- Updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md)
+  to mark Phase 7 complete and hand back to planner.
+
+Validations:
+
+- `python -m compileall tests/test_core_optimizer.py`
+- Self-checked the Phase 7 work against [CHECKLIST.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/CHECKLIST.md).
+- Attempted `python -m pytest -q tests/test_core_optimizer.py -k "place_edge_in_net"`, but the active interpreter does not have the `pytest` module installed.
+
+Risks:
+
+- Phase 7 increases confidence in the existing seam, but it does not widen
+  typed-family rollout beyond the currently builder-compiled and optimizer-
+  consumable local-placement paths.
+- Full behavioral verification remains limited until a test environment with
+  `pytest` and runtime dependencies is available.
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T23:54:56+00:00
+
+Implemented Phase 7 only.
+
+I added bounded optimizer regression coverage in [tests/test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py) for the remaining seam gaps: a supported mixed-source `XA` + `Al` placement case, an explicit guard-enabled failure when `OptimizationSemanticSnapshot` is missing, and an explicit failure for missing edge-anchor source metadata. No production module behavior or ownership boundaries were widened.
+
+I also updated the workflow docs and handoff records in [ARCHITECTURE.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/ARCHITECTURE.md), [CHECKLIST.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/CHECKLIST.md), [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md), and [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) to mark Phase 7 complete and document the exact covered scope.
+
+Validation: `python -m compileall tests/test_core_optimizer.py` passed. `python -m pytest -q tests/test_core_optimizer.py -k "place_edge_in_net"` could not run because `pytest` is not installed in the active interpreter.
