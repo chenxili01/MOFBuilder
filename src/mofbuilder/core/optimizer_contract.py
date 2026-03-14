@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 from .runtime_snapshot import (
     EdgeRoleRecord,
     GraphEdgeSemanticRecord,
     GraphNodeSemanticRecord,
+    NodeRoleRecord,
     OptimizationSemanticSnapshot,
 )
 
@@ -123,6 +124,39 @@ class NodePlacementContract:
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
 
 
+@dataclass(frozen=True)
+class LegalSlotAssignment:
+    edge_id: str
+    edge_role_id: str
+    incident_index: int
+    slot_index: int
+    slot_type: Optional[str] = None
+    endpoint_side: Optional[str] = None
+    path_type: Optional[str] = None
+    resolve_mode: Optional[str] = None
+    is_null_edge: bool = False
+    endpoint_pattern: Tuple[str, ...] = ()
+    metadata: FrozenMapping = field(default_factory=lambda: MappingProxyType({}))
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "endpoint_pattern", _freeze_tuple(self.endpoint_pattern))
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+
+@dataclass(frozen=True)
+class LegalNodeCorrespondence:
+    node_id: str
+    node_role_id: str
+    assignments: Tuple[LegalSlotAssignment, ...] = ()
+    edge_to_slot_index: FrozenMapping = field(default_factory=lambda: MappingProxyType({}))
+    metadata: FrozenMapping = field(default_factory=lambda: MappingProxyType({}))
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "assignments", _freeze_tuple(self.assignments))
+        object.__setattr__(self, "edge_to_slot_index", _freeze_mapping(self.edge_to_slot_index))
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+
 def _select_edge_slot_rule(
     edge_record: GraphEdgeSemanticRecord,
     role_record: Optional[EdgeRoleRecord],
@@ -186,6 +220,138 @@ def _build_target_direction(
             "graph_edge": edge_record.graph_edge,
             "endpoint_node_ids": endpoint_node_ids,
             "endpoint_role_ids": endpoint_role_ids,
+        },
+    )
+
+
+def _get_role_alias(role_record: Optional[NodeRoleRecord | EdgeRoleRecord], role_id: Optional[str]) -> Optional[str]:
+    if role_record is not None and role_record.family_alias:
+        return role_record.family_alias
+    if role_id is None:
+        return None
+    if ":" in role_id:
+        return role_id.split(":", 1)[1]
+    return role_id
+
+
+def _matches_endpoint_pattern(
+    contract: NodePlacementContract,
+    requirement: IncidentEdgePlacementRequirement,
+    semantic_snapshot: OptimizationSemanticSnapshot,
+) -> bool:
+    if not requirement.endpoint_pattern:
+        return True
+
+    node_role_record = semantic_snapshot.node_role_records.get(contract.node_role_id)
+    edge_role_record = semantic_snapshot.edge_role_records.get(requirement.edge_role_id)
+    node_alias = _get_role_alias(node_role_record, contract.node_role_id)
+    edge_alias = _get_role_alias(edge_role_record, requirement.edge_role_id)
+    pattern = requirement.endpoint_pattern
+
+    if len(pattern) >= 2 and edge_alias is not None and pattern[1] != edge_alias:
+        return False
+
+    if len(pattern) == 3:
+        if requirement.target_direction is None:
+            return node_alias == pattern[0] or node_alias == pattern[2]
+        endpoint_node_ids = requirement.target_direction.metadata.get("endpoint_node_ids", ())
+        if not endpoint_node_ids:
+            return node_alias == pattern[0] or node_alias == pattern[2]
+        local_is_first = requirement.target_direction.local_node_id == endpoint_node_ids[0]
+        expected_node_alias = pattern[0] if local_is_first else pattern[2]
+        return node_alias == expected_node_alias
+
+    return True
+
+
+def _bundle_order_slot_index(
+    contract: NodePlacementContract,
+    requirement: IncidentEdgePlacementRequirement,
+) -> Optional[int]:
+    if (
+        contract.bundle_id is None
+        or requirement.bundle_id != contract.bundle_id
+        or requirement.bundle_order_index is None
+        or not contract.bundle_ordered_attachment_indices
+    ):
+        return None
+    if requirement.bundle_order_index >= len(contract.bundle_ordered_attachment_indices):
+        return None
+    return contract.bundle_ordered_attachment_indices[requirement.bundle_order_index]
+
+
+def _candidate_slot_indices(
+    contract: NodePlacementContract,
+    requirement: IncidentEdgePlacementRequirement,
+    semantic_snapshot: OptimizationSemanticSnapshot,
+) -> Tuple[int, ...]:
+    if requirement.endpoint_side is not None and requirement.endpoint_side != contract.node_role_class:
+        return ()
+    if not _matches_endpoint_pattern(contract, requirement, semantic_snapshot):
+        return ()
+
+    bundle_slot_index = _bundle_order_slot_index(contract, requirement)
+    if bundle_slot_index is not None:
+        candidate_indices = (bundle_slot_index,)
+    elif requirement.local_slot_index is not None:
+        candidate_indices = (requirement.local_slot_index,)
+    else:
+        candidate_indices = tuple(range(len(contract.slot_rules)))
+
+    legal_indices = []
+    for slot_index in candidate_indices:
+        if slot_index >= len(contract.slot_rules):
+            continue
+        slot_rule = contract.slot_rules[slot_index]
+        local_slot_type = slot_rule.get("slot_type")
+        required_slot_type = requirement.required_slot_type
+        if required_slot_type is not None and local_slot_type is not None and required_slot_type != local_slot_type:
+            continue
+        legal_indices.append(slot_index)
+
+    return tuple(legal_indices)
+
+
+def _build_legal_correspondence(
+    contract: NodePlacementContract,
+    assignment_by_incident_index: Dict[int, int],
+) -> LegalNodeCorrespondence:
+    assignments = []
+    edge_to_slot_index = {}
+    for requirement in contract.incident_requirements:
+        slot_index = assignment_by_incident_index[requirement.incident_index]
+        slot_rule = contract.slot_rules[slot_index] if slot_index < len(contract.slot_rules) else {}
+        assignments.append(
+            LegalSlotAssignment(
+                edge_id=requirement.edge_id,
+                edge_role_id=requirement.edge_role_id,
+                incident_index=requirement.incident_index,
+                slot_index=slot_index,
+                slot_type=slot_rule.get("slot_type"),
+                endpoint_side=requirement.endpoint_side,
+                path_type=requirement.path_type,
+                resolve_mode=requirement.resolve_mode,
+                is_null_edge=requirement.is_null_edge,
+                endpoint_pattern=requirement.endpoint_pattern,
+                metadata={
+                    "required_slot_type": requirement.required_slot_type,
+                    "bundle_id": requirement.bundle_id,
+                    "bundle_order_index": requirement.bundle_order_index,
+                    "remote_node_id": requirement.remote_node_id,
+                    "remote_role_id": requirement.remote_role_id,
+                },
+            )
+        )
+        edge_to_slot_index[requirement.edge_id] = slot_index
+
+    return LegalNodeCorrespondence(
+        node_id=contract.node_id,
+        node_role_id=contract.node_role_id,
+        assignments=tuple(assignments),
+        edge_to_slot_index=edge_to_slot_index,
+        metadata={
+            "candidate_count": len(assignments),
+            "bundle_id": contract.bundle_id,
         },
     )
 
@@ -292,3 +458,54 @@ def compile_node_placement_contract(
             "graph_phase": semantic_snapshot.graph_phase,
         },
     )
+
+
+def compile_legal_node_correspondences(
+    semantic_snapshot: OptimizationSemanticSnapshot,
+    node_id: str,
+    node_contract: Optional[NodePlacementContract] = None,
+) -> Tuple[LegalNodeCorrespondence, ...]:
+    contract = node_contract or compile_node_placement_contract(semantic_snapshot, node_id)
+    if len(contract.incident_requirements) > len(contract.slot_rules):
+        return ()
+
+    candidate_lists = []
+    for requirement in contract.incident_requirements:
+        candidate_indices = _candidate_slot_indices(contract, requirement, semantic_snapshot)
+        if not candidate_indices:
+            return ()
+        candidate_lists.append((requirement.incident_index, candidate_indices))
+
+    correspondence_candidates = []
+    seen_mappings = set()
+    ordered_candidates = sorted(candidate_lists, key=lambda item: (len(item[1]), item[0]))
+
+    def backtrack(position: int, assigned_slots: Dict[int, int], used_slots: set[int]) -> None:
+        if position == len(ordered_candidates):
+            key = tuple(sorted(assigned_slots.items()))
+            if key in seen_mappings:
+                return
+            seen_mappings.add(key)
+            correspondence_candidates.append(
+                _build_legal_correspondence(contract, assigned_slots)
+            )
+            return
+
+        incident_index, slot_candidates = ordered_candidates[position]
+        for slot_index in slot_candidates:
+            if slot_index in used_slots:
+                continue
+            assigned_slots[incident_index] = slot_index
+            used_slots.add(slot_index)
+            backtrack(position + 1, assigned_slots, used_slots)
+            used_slots.remove(slot_index)
+            del assigned_slots[incident_index]
+
+    backtrack(0, {}, set())
+    correspondence_candidates.sort(
+        key=lambda candidate: tuple(
+            candidate.edge_to_slot_index[requirement.edge_id]
+            for requirement in contract.incident_requirements
+        )
+    )
+    return tuple(correspondence_candidates)

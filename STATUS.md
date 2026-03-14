@@ -2,8 +2,8 @@
 
 ## Workflow Status
 
-- Phase: Phase 1
-- Checkpoint: phase-1-executor-implemented
+- Phase: Phase 2
+- Checkpoint: phase-2-executor-implemented
 - Status: COMPLETED_PENDING_PLANNER
 - Next step: Planner reviews completion and decides whether to advance
 - Last update: 2026-03-14
@@ -18,7 +18,7 @@ Reconstruct the optimizer / rotation logic so local placement is driven by the c
 
 ## Current Focus
 
-Phase 1 executor work implemented a passive optimizer-side node-local placement contract helper derived from `OptimizationSemanticSnapshot`, plus tests. Do not begin legal correspondence solving, SVD initialization, local refinement, integration guards, or legacy-path replacement until the planner explicitly activates a later phase.
+Phase 2 executor work implemented a passive legality-first node-local correspondence compiler derived from `OptimizationSemanticSnapshot` and the Phase 1 contract helper, plus tests for legal, illegal, and ambiguous semantic mappings. Do not begin SVD initialization, local refinement, optional integration guards, builder changes, framework changes, or legacy-path replacement until the planner explicitly activates a later phase.
 
 ## Invariants
 

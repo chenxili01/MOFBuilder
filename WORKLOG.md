@@ -249,3 +249,185 @@ notes:
 - Checkpoint: phase-1-executor-implemented
 - Status: COMPLETED_PENDING_PLANNER
 - Next step: Planner reviews completion and decides whether to advance
+
+
+## planner-run
+
+- Timestamp: 2026-03-14T20:20:33+00:00
+
+## Active Phase
+- Phase: 2
+- Name: Legal Correspondence Compilation
+
+## Objective
+Implement a legality-first optimizer-side correspondence compiler that consumes the Phase 1 `NodePlacementContract` and `OptimizationSemanticSnapshot` data to determine which incident edges may legally map to which local slots, without using geometry to decide legality and without changing placement behavior yet.
+
+## Scope
+- `src/mofbuilder/core/optimizer.py`
+- `src/mofbuilder/core/optimizer_contract.py`
+- `src/mofbuilder/core/` new optimizer helper module for correspondence compilation, if needed
+- `tests/test_core_optimizer.py`
+- `STATUS.md`
+
+## Tasks
+1. Add a small optimizer-owned correspondence result/helper surface, derived only from `NodePlacementContract` and snapshot-backed contract fields, that can represent either one legal mapping or a small discrete set of legal mappings for a single node.
+2. Implement legality compilation rules using semantic inputs only: required endpoint slot type versus local slot type, endpoint/path semantics (`V-E-V` vs `V-E-C`), endpoint-side constraints, snapshot-provided slot constraints, bundle/order hints where relevant, and explicit null-edge metadata without collapsing null edges into zero-length real edges.
+3. Expose the compiler as a passive helper from optimizer-owned code so it can be called directly in tests or by `NetOptimizer`, but do not wire it into `rotation_and_cell_optimization`, SVD/Kabsch initialization, scoring, refinement, guarded integration flags, or legacy-path replacement.
+4. Add tests covering default-role and role-aware cases, including at least one clearly legal mapping, one illegal mapping rejected on semantics alone, and one case that returns a small legal candidate set rather than forcing geometry-based tie-breaking.
+
+## Validation
+- `python -m py_compile src/mofbuilder/core/optimizer_contract.py src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `python -m pytest tests/test_core_optimizer.py tests/test_core_runtime_snapshot.py`
+- Confirm legality is decided without geometry inputs, builder internals, framework code, or graph mutation.
+- Confirm Phase 2 scope only: no SVD/Kabsch pose computation, no local refinement, no integration guard wiring, and no legacy optimizer-path behavior change.
+
+## Non-goals
+- SVD/Kabsch local rigid initialization.
+- Geometry-based candidate ranking or tie-breaking.
+- Local chemistry-aware refinement.
+- Builder snapshot schema changes or builder/framework wiring changes.
+- Global optimizer objective changes or replacement of the legacy optimizer path.
+
+## Exit Criteria
+- A legal correspondence compiler exists in optimizer-owned code and operates from the snapshot-derived node-local contract only.
+- Tests cover legal versus illegal semantic mappings and at least one small discrete legal candidate-set case.
+- No forbidden modules are modified and no observable placement behavior is changed yet.
+
+## STATUS.md Update
+- Phase: Phase 2
+- Checkpoint: phase-2-plan-ready
+- Status: READY_FOR_EXECUTOR
+- Next step: Executor implements the active phase only
+
+
+## 2026-03-14 — executor — phase 2 legal correspondence compilation
+
+branch:
+optimizer-reconstruction
+
+phase:
+Phase 2 — Legal Correspondence Compilation
+
+checkpoint:
+phase-2-executor-implemented
+
+summary:
+- Added an optimizer-owned legality-first correspondence compiler that consumes the Phase 1 node placement contract and snapshot records only.
+- Added passive `NetOptimizer.compile_legal_node_correspondences()` access without changing rotation, scoring, SVD initialization, refinement, or legacy placement behavior.
+- Added Phase 2 tests covering one legal semantic mapping, one illegal mapping rejected on slot semantics alone, and one repeated-slot case that returns a small legal candidate set.
+
+files touched:
+- src/mofbuilder/core/optimizer_contract.py
+- src/mofbuilder/core/optimizer.py
+- tests/test_core_optimizer.py
+- WORKLOG.md
+- STATUS.md
+
+invariants checked:
+- Builder remains the owner of role interpretation and snapshot compilation.
+- Optimizer legality compilation consumes only `OptimizationSemanticSnapshot` and the Phase 1 contract helper.
+- Geometry is not used to determine legality.
+- Legacy optimizer behavior remains unchanged because the new helper path is passive only.
+- Framework, graph grammar, graph state names, primitive-first ordering, and null-edge distinction were not modified.
+
+validation:
+- `python -m py_compile src/mofbuilder/core/optimizer_contract.py src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `PYTHONPATH=src python - <<'PY' ... compile_legal_node_correspondences repeated-slot smoke check ... PY`
+- `python -m pytest tests/test_core_optimizer.py tests/test_core_runtime_snapshot.py` could not run because `pytest` is not installed in the active interpreter.
+- `PYTHONPATH=src python - <<'PY' ... NetOptimizer.compile_legal_node_correspondences smoke check ... PY` could not run because `numpy` is not installed in the active interpreter, and `optimizer.py` imports it at module load time.
+
+notes:
+- The workflow references `SNAPSHOT_API_HANDOFF.md`, `OPTIMIZER_DISCUSSION_MEMORY.md`, and `OPTIMIZER_TODO_ROADMAP.md`, but those files are not present in this checkout; implementation used the in-repo control docs, checkpoints, and snapshot types.
+- No Phase 3 SVD/Kabsch initialization, candidate scoring, local refinement, integration guard wiring, or legacy-path replacement was added.
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T20:20:33+00:00
+
+## Active Phase
+- Phase: 2
+- Name: Legal Correspondence Compilation
+
+## Implemented
+- Added `LegalSlotAssignment`, `LegalNodeCorrespondence`, and `compile_legal_node_correspondences()` in [src/mofbuilder/core/optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py).
+- Implemented semantic-only legality checks for slot type matching, endpoint-side compatibility, endpoint-pattern compatibility, and bundle-order constraints, plus injective candidate enumeration for repeated-slot ambiguity.
+- Added passive `NetOptimizer.compile_legal_node_correspondences()` in [src/mofbuilder/core/optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py).
+- Added Phase 2 tests for legal, illegal, and small candidate-set correspondence compilation in [tests/test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py).
+- Updated [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) and [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md).
+
+## Files Changed
+- [src/mofbuilder/core/optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py)
+- [src/mofbuilder/core/optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py)
+- [tests/test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py)
+- [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md)
+- [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md)
+
+## Validation
+- `python -m py_compile src/mofbuilder/core/optimizer_contract.py src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `PYTHONPATH=src python ...` contract-level repeated-slot smoke check passed.
+- `python -m pytest tests/test_core_optimizer.py tests/test_core_runtime_snapshot.py` could not run because `pytest` is not installed in the active interpreter.
+- `PYTHONPATH=src python ...` optimizer-level smoke check could not run because `numpy` is not installed in the active interpreter.
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- Full Phase 2 test validation is still pending on an environment with `pytest` and runtime dependencies such as `numpy` installed.
+- The workflow references `SNAPSHOT_API_HANDOFF.md`, `OPTIMIZER_DISCUSSION_MEMORY.md`, and `OPTIMIZER_TODO_ROADMAP.md`, but those files are not present in this checkout.
+
+## STATUS.md Update
+- Phase: Phase 2
+- Checkpoint: phase-2-executor-implemented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T20:25:21+00:00
+
+## Active Phase
+- Phase: 2
+- Name: Legal Correspondence Compilation
+
+## Implemented
+- Added passive legality result types and a semantic-only correspondence compiler in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py#L127).
+- Implemented legality checks from snapshot-derived contract data only: slot-type matching, endpoint-side compatibility, endpoint-pattern compatibility, bundle-order constraints, and injective candidate enumeration for repeated-slot ambiguity in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py#L237).
+- Added passive `NetOptimizer.compile_legal_node_correspondences()` in [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py#L831).
+- Added Phase 2 tests for one legal mapping, one illegal mapping, one small legal candidate set, and missing-snapshot failure in [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py#L328).
+- Updated [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) and [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md).
+
+## Files Changed
+- `src/mofbuilder/core/optimizer_contract.py`
+- `src/mofbuilder/core/optimizer.py`
+- `tests/test_core_optimizer.py`
+- `WORKLOG.md`
+- `STATUS.md`
+
+## Validation
+- `python -m py_compile src/mofbuilder/core/optimizer_contract.py src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `PYTHONPATH=src python ...` contract-level smoke check for repeated-slot ambiguity passed.
+- `python -m pytest tests/test_core_optimizer.py tests/test_core_runtime_snapshot.py` could not run because `pytest` is not installed.
+- `PYTHONPATH=src python ...` through `optimizer.py` could not run because `numpy` is not installed in the active interpreter.
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- Full Phase 2 validation still needs an environment with `pytest` and runtime deps such as `numpy`.
+- `SNAPSHOT_API_HANDOFF.md`, `OPTIMIZER_DISCUSSION_MEMORY.md`, and `OPTIMIZER_TODO_ROADMAP.md` are referenced by the workflow but not present in this checkout.
+
+## STATUS.md Update
+- Phase: Phase 2
+- Checkpoint: phase-2-executor-implemented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance
