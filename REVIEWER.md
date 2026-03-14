@@ -34,7 +34,7 @@ Confirm:
    downstream seams remain intact unless the phase explicitly allowed them to
    change.
 5. Verification: required tests exist and were run with `scripts/run_tests.sh`.
-6. Logging: `STATUS.md` and `WORKLOG.md` describe the same phase, checkpoint,
+6. Logging: `control/STATUS.md` and `control/WORKLOG.md` describe the same phase, checkpoint,
    and execution state.
 7. Quality: the change is minimal, clear, and placed in the correct module.
 
@@ -79,6 +79,6 @@ Rules:
 - If any blocking issue remains unresolved:
   - Review decision: FAILED
   - Can executor proceed?: no
-- If `STATUS.md` and `WORKLOG.md` disagree, include that under
+- If `control/STATUS.md` and `control/WORKLOG.md` disagree, include that under
   `Required log/status corrections`.
 - Use `none` when a section has nothing to report.

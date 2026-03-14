@@ -420,9 +420,9 @@ def read_context(max_context_chars: int) -> str:
 
     parts = [
         section("PLANS.md", tail_chars(read_text_if_exists(PLANS_FILE, "[missing]"), plans_budget, "PLANS.md truncated")),
-        section("STATUS.md", tail_chars(read_text_if_exists(STATUS_FILE, "[missing]"), status_budget, "STATUS.md truncated")),
-        section("WORKLOG.md", tail_chars(read_text_if_exists(WORKLOG_FILE, "[missing]"), worklog_budget, "WORKLOG.md truncated")),
-        section("REVIEW.md", tail_chars(read_text_if_exists(REVIEW_FILE, "[missing]"), review_budget, "REVIEW.md truncated")),
+        section("control/STATUS.md", tail_chars(read_text_if_exists(STATUS_FILE, "[missing]"), status_budget, "STATUS.md truncated")),
+        section("control/WORKLOG.md", tail_chars(read_text_if_exists(WORKLOG_FILE, "[missing]"), worklog_budget, "WORKLOG.md truncated")),
+        section("control/REVIEW.md", tail_chars(read_text_if_exists(REVIEW_FILE, "[missing]"), review_budget, "REVIEW.md truncated")),
         section("GIT DIFF", git_diff(diff_budget)),
     ]
     return "\n\n".join(parts)

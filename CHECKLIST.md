@@ -4,5 +4,5 @@ Phase checklist
 - tests added
 - single-role behavior unchanged
 - role registry invariants preserved
-- WORKLOG updated
-- STATUS updated
+- control/WORKLOG updated
+- control/STATUS updated

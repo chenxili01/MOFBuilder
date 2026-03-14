@@ -10,8 +10,8 @@ You may modify only:
 
 - source files explicitly allowed by the active Phase Contract
 - test files explicitly allowed by the active Phase Contract
-- `WORKLOG.md` for implementation and handoff updates
-- `STATUS.md` for checkpoint and status updates
+- `control/WORKLOG.md` for implementation and handoff updates
+- `control/STATUS.md` for checkpoint and status updates
 
 You must not modify frozen control docs or any file outside the active
 contract.
@@ -40,7 +40,7 @@ Execute the current phase within the active Phase Contract.
    - confirmation that you will stay within scope
 4. Implement only what the contract requires.
 5. Add or update only the tests the contract requires.
-6. After implementation, update `WORKLOG.md` and `STATUS.md` with files
+6. After implementation, update `control/WORKLOG.md` and `control/STATUS.md` with files
    changed, tests added/run, decisions, blockers, and the next state.
 
 ## Hard Rules
@@ -66,6 +66,6 @@ Return:
 2. Implementation approach
 3. Code changes
 4. Tests added or updated
-5. `WORKLOG.md` updates
-6. `STATUS.md` updates
+5. `control/WORKLOG.md` updates
+6. `control/STATUS.md` updates
 7. Any conflicts or reasons for stopping

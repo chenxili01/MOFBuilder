@@ -75,7 +75,7 @@ Compatibility requirements must always preserve:
   coordinated change
 - additive schema behavior unless the phase explicitly authorizes migration
 
-If the latest review was `FAILED`, `STATUS.md` must show that the next executor
+If the latest review was `FAILED`, `control/STATUS.md` must show that the next executor
 step is a corrective or remediation pass, not a fresh forward-only pass.
 
 ## Output
@@ -85,7 +85,7 @@ Return:
 1. Review summary
 2. Unresolved findings carried into the contract
 3. The generated Phase Contract
-4. The exact `WORKLOG.md` modifications
-5. The exact `STATUS.md` modifications
+4. The exact `control/WORKLOG.md` modifications
+5. The exact `control/STATUS.md` modifications
 
-Never delete `WORKLOG.md` history. Only append or update the active checkpoint.
+

@@ -1,4 +1,4 @@
-# PLAN.md
+# PLANS.md
 
 ## 1. Title
 
@@ -29,7 +29,7 @@ optimization constraints, resolve timing, provenance, unsaturated-site
 generation, and debug export.
 
 The goal is to make later executor threads work from a concrete spec instead of
-inventing semantics module-by-module. The plan therefore fixes the graph
+inventing semantics module-by-module. The PLANS therefore fixes the graph
 grammar, naming model, ownership boundaries, phase contracts, validation goals,
 stop rules, and failure-containment rules up front while preserving the current
 public workflow and single-role fast path.
@@ -78,7 +78,7 @@ Early phases explicitly do not attempt:
 
 ## 6. Architecture invariants
 
-The following invariants are locked for this cycle unless a later explicit plan
+The following invariants are locked for this cycle unless a later explicit PLANS
 revision says otherwise:
 
 - The locked pipeline remains intact:
@@ -488,7 +488,7 @@ The following compatibility rules are mandatory in early phases:
 
 | Phase | Name | Main output |
 | --- | --- | --- |
-| 1 | Planning/spec | Active `PLAN.md` with phase contracts and schema draft |
+| 1 | Planning/spec | Active `PLANS.md` with phase contracts and schema draft |
 | 2 | Passive metadata extension | Concrete JSON-readable family metadata contract in `MofTopLibrary` |
 | 3 | Builder normalization and validation | Compiled runtime role/bundle scaffolding and explicit validation entrypoint |
 | 4 | Optimizer role-aware consumption | Placement constraints aware of path class, slot typing, and null-edge rules |
@@ -503,7 +503,7 @@ The following compatibility rules are mandatory in early phases:
 
 Objective:
 
-- Produce this active plan and freeze the semantic, ownership, and stop-rule
+- Produce this active PLANS and freeze the semantic, ownership, and stop-rule
   contracts for later execution threads.
 
 Preconditions:
@@ -513,7 +513,7 @@ Preconditions:
 
 In-scope modules/files:
 
-- `PLAN.md`
+- `PLANS.md`
 - planning/control docs for read-only synthesis
 
 Explicitly out of scope:
@@ -530,9 +530,9 @@ Invariants to preserve:
 
 Validation goals:
 
-- the plan must encode the settled semantic contract
-- the plan must encode the settled module ownership contract
-- the plan must respect repository architecture locks and compatibility rules
+- the PLANS must encode the settled semantic contract
+- the PLANS must encode the settled module ownership contract
+- the PLANS must respect repository architecture locks and compatibility rules
 
 Tests to add/run later:
 
@@ -573,8 +573,8 @@ Objective:
 
 Preconditions:
 
-- Phase 1 plan accepted
-- exact schema names and semantics taken from this plan unless a real conflict
+- Phase 1 PLANS accepted
+- exact schema names and semantics taken from this PLANS unless a real conflict
   is documented first
 
 In-scope modules/files:
@@ -601,7 +601,7 @@ Explicitly out of scope:
 - bundle-id derivation
 - unresolved-edge-policy normalization
 - structured runtime validation APIs
-- any bundled-database edit that is not explicitly authorized by a plan
+- any bundled-database edit that is not explicitly authorized by a PLANS
   revision that names the exact allowed families
 
 Invariants to preserve:
@@ -636,7 +636,7 @@ Tests to add/run later:
 - at least one legacy-family regression
 - at least one no-role-metadata regression
 - at least one invalid-schema negative test
-- only if bundled database mode is explicitly approved by a plan revision that
+- only if bundled database mode is explicitly approved by a PLANS revision that
   names exact families, at least one regression proving existing bundled
   families are unchanged except for an additive `role_metadata` field
 
@@ -656,7 +656,7 @@ Planner/executor/reviewer notes:
 - executor must keep this phase metadata-only
 - Phase 2 default execution mode is `fixture-only`
 - every executor thread must begin by reopening the relevant current-cycle
-  control documents before coding; at minimum this means `PLAN.md` plus any
+  control documents before coding; at minimum this means `PLANS.md` plus any
   applicable frozen control docs named in Section 20
 - the first Phase 2 executor thread must reopen `STATUS.md` and `WORKLOG.md`
   and explicitly confirm in its pre-coding summary that it is operating in the
@@ -667,7 +667,7 @@ Planner/executor/reviewer notes:
 - every Phase 2 pre-coding summary must explicitly declare whether
   `database/MOF_topology_role_metadata.json` will be edited
 - a pre-coding summary cannot self-authorize bundled-database edits
-- editing `database/MOF_topology_role_metadata.json` is forbidden unless a plan
+- editing `database/MOF_topology_role_metadata.json` is forbidden unless a PLANS
   revision explicitly authorizes that file and names the exact allowed
   families
 - builder-facing compilation helpers, registry construction, bundle-id
@@ -1082,7 +1082,7 @@ Rollback risks / failure risks:
 Planner/executor/reviewer notes:
 
 - reviewer should keep this phase additive and reject output-format churn that
-  is not required by the plan
+  is not required by the PLANS
 
 Stop and escalate if:
 
@@ -1179,7 +1179,7 @@ or closely related environment/configuration files.
 | Phase | Allowed files | Files that should not be touched in that phase |
 | --- | --- | --- |
 | 1 | `PLANS.md`, control-doc synchronization files, and localized workflow / environment support seams allowed by the note above | All runtime modules and tests that would change MOFBuilder behavior, bundled databases, frozen architecture docs |
-| 2 | `src/mofbuilder/core/moftoplibrary.py`, `tests/test_core_moftoplibrary.py`, metadata fixtures under `tests/database/`; `database/MOF_topology_role_metadata.json` only if a plan revision explicitly authorizes that file and names exact families | `builder.py`, `net.py`, `optimizer.py`, `supercell.py`, `framework.py`, `defects.py`, `termination.py`, `write.py`, MD modules |
+| 2 | `src/mofbuilder/core/moftoplibrary.py`, `tests/test_core_moftoplibrary.py`, metadata fixtures under `tests/database/`; `database/MOF_topology_role_metadata.json` only if a PLANS revision explicitly authorizes that file and names exact families | `builder.py`, `net.py`, `optimizer.py`, `supercell.py`, `framework.py`, `defects.py`, `termination.py`, `write.py`, MD modules |
 | 3 | `src/mofbuilder/core/builder.py`, `src/mofbuilder/core/net.py` for validation only, `tests/test_core_builder.py`, `tests/test_core_net.py` | `optimizer.py`, `supercell.py`, `framework.py`, `defects.py`, `termination.py`, `write.py`, MD modules |
 | 4 | `src/mofbuilder/core/optimizer.py`, narrow helper files if strictly required, `tests/test_core_optimizer.py` | `supercell.py`, `framework.py`, `defects.py`, `termination.py`, `write.py`, metadata files |
 | 5 | `src/mofbuilder/core/supercell.py`, `src/mofbuilder/core/framework.py`, narrow builder handoff plumbing, `tests/test_core_supercell.py`, `tests/test_core_framework.py` | `defects.py`, `termination.py`, `write.py`, metadata files, MD modules |
@@ -1232,7 +1232,7 @@ Suggested narrow verification targets by phase:
   - one legacy-family regression
   - one no-role-metadata regression
   - one invalid-schema negative test
-  - only if bundled database mode is explicitly approved by plan revision, one
+  - only if bundled database mode is explicitly approved by PLANS revision, one
     regression proving existing bundled families are unchanged except for an
     additive `role_metadata` field
 - Phase 3:
@@ -1320,22 +1320,22 @@ the settled semantics above.
   containment.
 - No phase may silently broaden scope.
 - If an executor discovers a schema/runtime/invariant conflict, the executor
-  must stop, log the conflict, and request a plan revision instead of repairing
+  must stop, log the conflict, and request a PLANS revision instead of repairing
   both sides in one pass.
 - During this planning cycle, the following are read-only control docs for
   executor and reviewer threads unless a real conflict is found, logged, and
   escalated before any edit:
   `AGENTS.md`, `ARCHITECTURE.md`, `ARCHITECTURE_DECISIONS.md`, `README.md`,
   and `CODEX_CONTEXT.md`.
-- `STATUS.md` and `WORKLOG.md` are read-only for semantic/scope edits, but
+- `control/STATUS.md` and `control/WORKLOG.md` are read-only for semantic/scope edits, but
   append-only checkpoint/status logging required by `AGENTS.md` is permitted.
 - Every executor thread must begin by reopening the relevant control docs for
-  the current cycle before coding. The minimum required set is `PLAN.md` plus
+  the current cycle before coding. The minimum required set is `PLANS.md` plus
   any phase-specific control docs or frozen records needed to verify scope,
   invariants, and stop rules.
 - Section C execution-control patch for Phase 2 is active in this planning
   cycle. Equivalent mandatory wording is:
-  - the first Phase 2 executor thread must reopen `STATUS.md` and `WORKLOG.md`
+  - the first Phase 2 executor thread must reopen `control/STATUS.md` and `control/WORKLOG.md`
     and explicitly confirm it is working in the new cycle before touching
     `src/mofbuilder/core/moftoplibrary.py`, `tests/test_core_moftoplibrary.py`,
     `tests/database/`, or `database/MOF_topology_role_metadata.json`
@@ -1346,7 +1346,7 @@ the settled semantics above.
     `database/MOF_topology_role_metadata.json` will be edited
   - a pre-coding summary cannot self-authorize bundled-database edits
   - editing `database/MOF_topology_role_metadata.json` is forbidden unless a
-    plan revision explicitly authorizes that file and names exact allowed
+    PLANS revision explicitly authorizes that file and names exact allowed
     families
   - reviewer approval for Phase 2 requires the runtime-seam checklist plus
     direct verification with
@@ -1355,7 +1355,7 @@ the settled semantics above.
     - one legacy-family regression
     - one no-role-metadata regression
     - one invalid-schema negative test
-    - only if bundled database mode is explicitly approved by a plan revision,
+    - only if bundled database mode is explicitly approved by a PLANS revision,
       one regression proving existing bundled families are unchanged except for
       an additive `role_metadata` field
 - Runtime-seam checklist for reviewer approval:
@@ -1374,7 +1374,7 @@ the settled semantics above.
     `MofTopLibrary` boundary and not by downstream repair logic
   - the submitted thread stayed within its declared Phase 2 mode:
     `fixture-only` or `fixture + database metadata`
-  - if bundled database mode was not explicitly approved by plan revision,
+  - if bundled database mode was not explicitly approved by PLANS revision,
     `database/MOF_topology_role_metadata.json` is unchanged
   - stop immediately if the work would alter `fetch()` results for any existing
     bundled family, even when only
@@ -1382,7 +1382,7 @@ the settled semantics above.
 
 ## 21. Stop rule for this planning run
 
-This run only creates or updates `PLAN.md`.
+This run only creates or updates `PLANS.md`.
 
 It does not:
 
@@ -1394,7 +1394,7 @@ It does not:
 
 The planning run ends after:
 
-- drafting `PLAN.md`
+- drafting `PLANS.md`
 - self-reviewing it once against the Round 1 checkpoint, Round 2 checkpoint,
   and repository control docs
 - applying at most one revision if needed
