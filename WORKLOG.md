@@ -5,6 +5,58 @@ Append-only development log.
 
 ## executor-run
 
+- Timestamp: 2026-03-14T23:45:22+00:00
+
+Implemented `Phase 5` only: optimizer-local placement now consumes
+builder-compiled resolved anchors for covered role-aware paths.
+
+Changed files:
+
+- [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py)
+- [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py)
+- [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md)
+- [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md)
+
+What changed:
+
+- Extended optimizer fragment payload preparation so typed
+  `attachment_coords_by_type` registries are preserved alongside legacy
+  literal-`X` coordinate arrays.
+- Added optimizer-local typed attachment lookup generation for scaled and
+  rotated node fragments so placement can resolve `(anchor_source_type,
+  anchor_source_ordinal)` pairs into explicit node anchor positions.
+- Migrated `place_edge_in_net()` to consume builder-compiled semantic snapshot
+  records for role-aware placement:
+  node anchors now resolve from graph-node slot rules,
+  linker anchors now resolve from graph-edge slot rules,
+  and semantic placement no longer depends on literal-`X` buckets as the
+  universal anchor model.
+- Preserved legacy literal-`X` support only through resolved-anchor
+  compatibility metadata by allowing explicit `anchor_source_type == "X"`
+  records to fall back to legacy `x_coords` arrays.
+- Added bounded optimizer tests covering one typed resolved-anchor placement
+  case, one legacy literal-`X` compatibility-through-resolved-anchor case, and
+  one explicit missing-anchor semantic failure case.
+- Updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md)
+  to mark Phase 5 complete and hand back to planner.
+
+Validations:
+
+- `python -m compileall src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- Attempted `python -m pytest -q tests/test_core_optimizer.py`, but the active interpreter does not have the `pytest` module installed.
+- Attempted a direct Python runtime sanity check for the new optimizer placement path, but the available interpreter is missing runtime dependencies such as `numpy`.
+
+Risks:
+
+- Phase 5 now resolves covered local-placement anchors semantically, but the
+  broader edge-pairing and target-edge-length paths still retain preexisting
+  geometry-first behavior outside this bounded placement seam.
+- Full behavioral verification remains limited until a test environment with
+  `pytest` and runtime dependencies is available.
+
+
+## executor-run
+
 - Timestamp: 2026-03-15T00:00:00+00:00
 
 Implemented `Phase 3` only: builder-owned typed attachment registries for
@@ -308,3 +360,32 @@ Risks:
 Implemented Phase 4 only. [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py) now resolves `source_atom_type` from slot/path semantics into builder-owned slot-rule anchor metadata, exports explicit source anchor fields on runtime/optimization snapshots, and compiles per-edge target anchor maps when semantic-graph `ccoords` are available. [test_core_builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_builder.py) now covers one typed resolved-anchor case and one legacy literal-`X` compatibility case, and I updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) and [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) to mark Phase 4 complete and hand back to planner.
 
 Validation was limited to `python -m compileall src/mofbuilder/core/builder.py tests/test_core_builder.py`, which passed. I could not run `pytest` here because the shell/interpreter is missing `pytest`, and direct runtime import checks were also blocked by missing dependencies such as `networkx`.
+
+
+## planner-run
+
+- Timestamp: 2026-03-14T23:37:15+00:00
+
+Active phase is `Phase 5 — Optimizer Consumption Migration`.
+
+I updated [PLAN.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/PLAN.md) with a bounded Phase 5 execution contract: migrate optimizer-local placement to builder-compiled resolved anchors, add explicit missing-anchor semantic failures, preserve legacy literal-`X` support only through compatibility anchors, require bounded tests, and stop before Phase 6 rollout work.
+
+I updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) to:
+- set checkpoint to `phase-5-plan-generated`
+- set status to `READY FOR EXECUTOR`
+- set next step to `executor`
+
+No production code or tests were changed.
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T23:46:24+00:00
+
+Implemented Phase 5 only.
+
+`[optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py)` now preserves typed attachment coordinate registries in optimizer payloads, builds rotated node-anchor lookups keyed by `(anchor_source_type, anchor_source_ordinal)`, and makes `place_edge_in_net()` consume builder-compiled semantic snapshot records for role-aware placement. Legacy literal `X` still works, but only when the resolved anchor metadata explicitly points to `X`; missing resolved-anchor inputs now raise semantic `ValueError`s instead of silently falling back.
+
+`[test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py)` now includes the bounded Phase 5 cases: typed resolved-anchor placement, legacy literal-`X` compatibility-through-resolved-anchor, and explicit missing-anchor failure. I also updated `[STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md)` and `[WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md)` to mark Phase 5 complete and hand back to planner.
+
+Validation was limited to `python -m compileall src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`, which passed. I could not run `pytest` because the available interpreter is missing `pytest`, and direct runtime checks were blocked by missing dependencies such as `numpy`. `PLAN.md` already had unrelated local changes and was left untouched.

@@ -407,6 +407,61 @@ This phase should cover:
 
 It must not broaden into framework or global optimizer redesign.
 
+Execution plan for this phase only:
+
+1. Audit the Phase 5 allowed modules to find every optimizer-local placement path
+   that still reads raw typed attachment tables or legacy `node_X_data`-style
+   payloads as if they were the canonical anchor source.
+2. Update those local placement helpers to consume builder-compiled resolved-anchor
+   metadata first, including the explicit source-type and target-anchor records
+   already exported by the builder/runtime seam.
+3. Preserve legality-before-geometry by treating builder-compiled resolved anchors
+   as the only semantic source of truth; optimizer logic in this phase may use
+   geometry to place already-resolved anchors, but it must not re-resolve
+   `source_atom_type` or attachment legality from raw fragment atom buckets.
+4. Add narrow semantic guardrails for missing or incomplete resolved-anchor inputs
+   so failures are explicit, explainable, and tied to missing builder-compiled
+   anchor semantics rather than downstream geometry errors or silent fallback to
+   universal literal-`X` assumptions.
+5. Keep legacy literal-`X` families working through the new seam by allowing the
+   optimizer to consume resolved anchors that were themselves compiled from
+   compatibility fallback, without restoring `node_X_data` as the universal
+   optimizer anchor model.
+6. Add bounded regression tests that prove:
+   one typed resolved-anchor case reaches optimizer-local placement without
+   requiring a universal `X` bucket, one legacy literal-`X` compatibility case
+   still succeeds through resolved-anchor consumption, and at least one missing-
+   anchor case fails with an explicit semantic error.
+7. Limit Phase 5 scope to optimizer-consumption migration only:
+   do not change framework behavior, graph grammar, broad pipeline ordering,
+   snapshot ownership, or guarded rollout controls that belong to Phase 6.
+
+Executor handoff constraints:
+
+- Allowed files: `mofbuilder/core/optimizer.py`, `mofbuilder/core/builder.py`,
+  `mofbuilder/core/` new helper modules if needed, `tests/`, and workflow
+  markdown files only.
+- Required outcome: optimizer-local placement helpers consume builder-compiled
+  resolved-anchor records as the canonical anchor input and no longer require
+  `node_X_data` or equivalent literal-`X` buckets as the universal source.
+- Required seam statement: builder remains the only owner of slot/path semantic
+  resolution and `source_atom_type` selection; optimizer may consume compiled
+  anchors and geometry, but it must not reinterpret raw fragment atom labels or
+  invent legality from geometry first.
+- Required failure behavior: missing or incomplete resolved-anchor inputs must
+  surface as explicit semantic errors rather than silent fallback, opaque geometry
+  failures, or universal literal-`X` assumptions.
+- Required compatibility statement: legacy literal-`X` families remain valid only
+  through builder-compiled compatibility anchors, not by preserving raw `*_X_data`
+  payloads as the optimizer's semantic source of truth.
+- Required test coverage: at least one typed optimizer-consumption case, at least
+  one legacy literal-`X` compatibility-through-resolved-anchor case, and at least
+  one explicit missing-anchor semantic failure case.
+- Stop rule: stop immediately if the work would require framework changes, graph
+  grammar changes, broad optimizer redesign beyond local placement consumption,
+  snapshot ownership redesign, or rollout/feature-flag compatibility controls that
+  belong to Phase 6.
+
 ---
 
 # Phase 6 — Compatibility Layer and Guarded Rollout

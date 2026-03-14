@@ -87,6 +87,7 @@ class NetOptimizer:
         self.use_role_aware_local_placement = False
         self.role_aware_local_placement_records = {}
         self.role_aware_local_placement_debug_records = {}
+        self.sc_rot_node_attachment_lookup = {}
         #self.constant_length = 1.54  #default C-C single bond length
         self.linker_frag_length = None
 
@@ -361,6 +362,28 @@ class NetOptimizer:
                                                        sc_node_pos_dict)
         sc_rot_node_X_pos, self.optimized_pair = self._apply_rot2atoms_pos(
             opt_rots, sG, sc_node_X_pos_dict)
+        sc_rot_node_attachment_lookup = {}
+        if self.use_role_aware_local_placement and self.semantic_snapshot is not None:
+            sc_node_attachment_pos_dict, attachment_metadata_by_node = (
+                self._generate_attachment_position_dict(sG)
+            )
+            sc_node_attachment_pos_dict, _ = self._apply_rot_trans2dict(
+                sG,
+                sc_node_attachment_pos_dict,
+                {
+                    idx: np.empty((0, 4), dtype=float)
+                    for idx in sc_node_attachment_pos_dict
+                },
+            )
+            sc_rot_node_attachment_positions = self._apply_rotations_to_position_dict(
+                opt_rots,
+                sG,
+                sc_node_attachment_pos_dict,
+            )
+            sc_rot_node_attachment_lookup = self._build_attachment_lookup_from_positions(
+                attachment_metadata_by_node,
+                sc_rot_node_attachment_positions,
+            )
 
         # Save results to XYZ
         if self._debug:
@@ -379,6 +402,7 @@ class NetOptimizer:
         self.sc_node_pos_dict = sc_node_pos_dict
         self.sc_rot_node_X_pos = sc_rot_node_X_pos
         self.sc_rot_node_pos = sc_rot_node_pos
+        self.sc_rot_node_attachment_lookup = sc_rot_node_attachment_lookup
         self.sc_unit_cell = sc_unit_cell
         self.sc_unit_cell_inv = sc_unit_cell_inv
 
@@ -611,6 +635,112 @@ class NetOptimizer:
             "used_ambiguity_resolution": ambiguity_resolution is not None,
         }
 
+    def _get_semantic_edge_record(self, edge):
+        if self.semantic_snapshot is None:
+            return None
+        edge_id = "|".join(str(node_name) for node_name in edge)
+        record = self.semantic_snapshot.graph_edge_records.get(edge_id)
+        if record is not None:
+            return record
+        return self.semantic_snapshot.graph_edge_records.get(
+            "|".join(str(node_name) for node_name in reversed(edge))
+        )
+
+    def _get_slot_rule_by_attachment_index(self, slot_rules, attachment_index):
+        if attachment_index is None:
+            return {}
+        for slot_rule in slot_rules or ():
+            if slot_rule.get("attachment_index") == attachment_index:
+                return slot_rule
+        return {}
+
+    def _get_resolved_anchor_descriptor(self, slot_rule, *, slot_index=None):
+        source_atom_type = (
+            slot_rule.get("anchor_source_type")
+            or slot_rule.get("source_atom_type")
+            or slot_rule.get("slot_type")
+        )
+        source_ordinal = slot_rule.get("anchor_source_ordinal")
+        if source_ordinal is None:
+            source_ordinal = slot_rule.get("attachment_index", slot_index)
+        if source_atom_type is None or source_ordinal is None:
+            return None, None
+        return str(source_atom_type), int(source_ordinal)
+
+    def _resolve_semantic_node_anchor_position(self, node_id, edge_record):
+        node_record = self.semantic_snapshot.graph_node_records.get(str(node_id))
+        if node_record is None:
+            raise ValueError(
+                f"Missing builder-compiled resolved anchor semantics for node {node_id} during optimizer placement."
+            )
+        slot_index = (edge_record.slot_index or {}).get(node_id)
+        slot_rule = self._get_slot_rule_by_attachment_index(
+            node_record.slot_rules,
+            slot_index,
+        )
+        source_atom_type, source_ordinal = self._get_resolved_anchor_descriptor(
+            slot_rule,
+            slot_index=slot_index,
+        )
+        if source_atom_type is None or source_ordinal is None:
+            raise ValueError(
+                f"Missing resolved anchor source metadata for edge {edge_record.edge_id} on node {node_id}."
+            )
+
+        attachment_lookup = self.sc_rot_node_attachment_lookup.get(str(node_id), {})
+        anchor_position = attachment_lookup.get((source_atom_type, source_ordinal))
+        if anchor_position is not None:
+            return np.asarray(anchor_position, dtype=float)
+
+        if source_atom_type == "X":
+            node_index = self.sorted_nodes.index(node_id)
+            x_positions = self.sc_rot_node_X_pos.get(node_index)
+            if x_positions is not None and source_ordinal < len(x_positions):
+                return np.asarray(x_positions[source_ordinal][1:], dtype=float)
+
+        raise ValueError(
+            f"Missing builder-compiled resolved anchor position for edge {edge_record.edge_id} on node {node_id} "
+            f"(source_atom_type={source_atom_type}, source_ordinal={source_ordinal})."
+        )
+
+    def _resolve_semantic_edge_anchor_coords(self, edge, edge_payload):
+        edge_record = self._get_semantic_edge_record(edge)
+        if edge_record is None:
+            raise ValueError(
+                f"Missing builder-compiled resolved anchor semantics for edge {'|'.join(str(node_name) for node_name in edge)} during optimizer placement."
+            )
+
+        endpoint_coords = []
+        for node_id in edge:
+            slot_index = (edge_record.slot_index or {}).get(node_id)
+            slot_rule = self._get_slot_rule_by_attachment_index(
+                edge_record.slot_rules,
+                slot_index,
+            )
+            source_atom_type, source_ordinal = self._get_resolved_anchor_descriptor(
+                slot_rule,
+                slot_index=slot_index,
+            )
+            if source_atom_type is None or source_ordinal is None:
+                raise ValueError(
+                    f"Missing edge-anchor source metadata for edge {edge_record.edge_id} at endpoint {node_id}."
+                )
+            coords = np.asarray(
+                edge_payload.get("attachment_coords_by_type", {}).get(source_atom_type, ()),
+                dtype=float,
+            ).reshape(-1, 3)
+            if coords.shape[0] > source_ordinal:
+                endpoint_coords.append(coords[source_ordinal])
+                continue
+            if source_atom_type == "X" and edge_payload["x_coords"].shape[0] > source_ordinal:
+                endpoint_coords.append(edge_payload["x_coords"][source_ordinal])
+                continue
+            raise ValueError(
+                f"Missing builder-compiled resolved edge anchor coordinates for edge {edge_record.edge_id} "
+                f"(source_atom_type={source_atom_type}, source_ordinal={source_ordinal})."
+            )
+        return edge_record, np.asarray(endpoint_coords, dtype=float)
+
     def place_edge_in_net(self):
         """
         based on the optimized rotations and cell parameters, use optimized pair to find connected X-X pair in optimized cell,
@@ -629,11 +759,33 @@ class NetOptimizer:
         nodes_atom = self.nodes_atom
         norm_xx_vector_record = []
         rot_record = []
+        use_semantic_anchors = (
+            self.use_role_aware_local_placement and self.semantic_snapshot is not None
+        )
+        if self.use_role_aware_local_placement and self.semantic_snapshot is None:
+            raise ValueError(
+                "Missing builder-compiled resolved anchor semantics: OptimizationSemanticSnapshot is required for role-aware optimizer placement."
+            )
+        edge_items = (
+            [
+                (edge, optimized_pair.get(edge, (0, 0)))
+                for edge in self.sorted_edges
+            ]
+            if use_semantic_anchors
+            else optimized_pair.items()
+        )
 
         # edges = {}
-        for (i, j), pair in optimized_pair.items():
+        for (i, j), pair in edge_items:
             edge_payload = self.edge_fragment_payloads[(i, j)]
-            e_xx_vec = edge_payload["x_coords"]
+            if use_semantic_anchors:
+                edge_record, e_xx_vec = self._resolve_semantic_edge_anchor_coords(
+                    (i, j),
+                    edge_payload,
+                )
+            else:
+                edge_record = None
+                e_xx_vec = edge_payload["x_coords"]
             linker_frag_length = edge_payload["linker_frag_length"]
             if linker_frag_length > 0.0:
                 scalar = (linker_frag_length +
@@ -643,10 +795,14 @@ class NetOptimizer:
 
             extended_e_xx_vec = [coord * scalar for coord in e_xx_vec]
             x_idx_i, x_idx_j = pair
-            reindex_i = sorted_nodes.index(i)
-            reindex_j = sorted_nodes.index(j)
-            x_i = scaled_rotated_Xatoms_positions[reindex_i][x_idx_i][1:]
-            x_j = scaled_rotated_Xatoms_positions[reindex_j][x_idx_j][1:]
+            if use_semantic_anchors:
+                x_i = self._resolve_semantic_node_anchor_position(i, edge_record)
+                x_j = self._resolve_semantic_node_anchor_position(j, edge_record)
+            else:
+                reindex_i = sorted_nodes.index(i)
+                reindex_j = sorted_nodes.index(j)
+                x_i = scaled_rotated_Xatoms_positions[reindex_i][x_idx_i][1:]
+                x_j = scaled_rotated_Xatoms_positions[reindex_j][x_idx_j][1:]
             x_i_x_j_middle_point = np.mean([x_i, x_j], axis=0)
             xx_vector = np.vstack(
                 [x_i - x_i_x_j_middle_point, x_j - x_i_x_j_middle_point])
@@ -826,18 +982,43 @@ class NetOptimizer:
                                       data,
                                       x_data,
                                       *,
+                                      attachment_coords_by_type=None,
                                       linker_frag_length=None,
                                       fake_edge=False):
         assert_msg_critical(
             data is not None and x_data is not None,
             "Optimizer fragment payload is missing atom or X-atom data.")
+        x_coords = x_data[:, 5:8].astype(float)
         return {
             "atom": data[:, 0:2],
             "coords": data[:, 5:8].astype(float),
-            "x_coords": x_data[:, 5:8].astype(float),
+            "x_coords": x_coords,
+            "attachment_coords_by_type": self._normalize_attachment_coords_by_type(
+                attachment_coords_by_type,
+                fallback_x_coords=x_coords,
+            ),
             "linker_frag_length": linker_frag_length,
             "fake_edge": fake_edge,
         }
+
+    def _normalize_attachment_coords_by_type(self,
+                                             attachment_coords_by_type,
+                                             *,
+                                             fallback_x_coords=None):
+        normalized = {}
+        if attachment_coords_by_type:
+            for atom_type, coords in attachment_coords_by_type.items():
+                if coords is None:
+                    continue
+                array = np.asarray(coords, dtype=float)
+                if array.size == 0:
+                    normalized[str(atom_type)] = np.empty((0, 3), dtype=float)
+                    continue
+                normalized[str(atom_type)] = array.reshape(-1, 3)
+        if not normalized and fallback_x_coords is not None:
+            normalized["X"] = np.asarray(fallback_x_coords,
+                                          dtype=float).reshape(-1, 3)
+        return normalized
 
     def _get_single_registry_entry(self, registry):
         if registry and len(registry) == 1:
@@ -880,6 +1061,9 @@ class NetOptimizer:
                 return self._fragment_payload_from_arrays(
                     role_entry["linker_center_data"],
                     role_entry["linker_center_X_data"],
+                    attachment_coords_by_type=role_entry.get(
+                        "linker_center_attachment_coords_by_type"
+                    ),
                 )
             return self._fragment_payload_from_arrays(self.EC_data,
                                                       self.EC_X_data)
@@ -888,7 +1072,10 @@ class NetOptimizer:
         if (role_entry is not None and role_entry.get("node_data") is not None
                 and role_entry.get("node_X_data") is not None):
             return self._fragment_payload_from_arrays(role_entry["node_data"],
-                                                      role_entry["node_X_data"])
+                                                      role_entry["node_X_data"],
+                                                      attachment_coords_by_type=role_entry.get(
+                                                          "node_attachment_coords_by_type"
+                                                      ))
         return self._fragment_payload_from_arrays(self.V_data, self.V_X_data)
 
     def _resolve_edge_fragment_payload(self, G, edge):
@@ -907,6 +1094,11 @@ class NetOptimizer:
                 return self._fragment_payload_from_arrays(
                     data,
                     x_data,
+                    attachment_coords_by_type=(
+                        role_entry.get("linker_outer_attachment_coords_by_type")
+                        if int(role_entry["linker_connectivity"]) > 2
+                        else role_entry.get("linker_center_attachment_coords_by_type")
+                    ),
                     linker_frag_length=linker_frag_length,
                     fake_edge=bool(role_entry.get("linker_fake_edge", False)),
                 )
@@ -932,6 +1124,66 @@ class NetOptimizer:
             self.edge_fragment_payloads[edge] = payload
             self.edge_fragment_payloads[(edge[1], edge[0])] = payload
 
+    def _addidx(self, array):
+        row_indices = np.arange(array.shape[0]).reshape(-1, 1).astype(int)
+        return np.hstack((row_indices, array))
+
+    def _generate_attachment_position_dict(self, sG):
+        position_dict = {}
+        metadata_by_node = {}
+        for idx, node in enumerate(self.sorted_nodes):
+            payload = self.node_fragment_payloads[node]
+            rows = []
+            metadata = []
+            for source_atom_type, coords in sorted(
+                payload.get("attachment_coords_by_type", {}).items()
+            ):
+                coords_array = np.asarray(coords, dtype=float).reshape(-1, 3)
+                for source_ordinal, coord in enumerate(coords_array):
+                    rows.append(sG.nodes[node]["ccoords"] + coord)
+                    metadata.append((len(rows) - 1, str(source_atom_type), source_ordinal))
+            if rows:
+                position_dict[idx] = self._addidx(np.asarray(rows, dtype=float))
+            else:
+                position_dict[idx] = np.empty((0, 4), dtype=float)
+            metadata_by_node[idx] = tuple(metadata)
+        return position_dict, metadata_by_node
+
+    def _apply_rotations_to_position_dict(self, optimized_rotations, G, position_dict):
+        rotated_positions = {
+            key: np.array(value, copy=True)
+            for key, value in position_dict.items()
+        }
+        for i, node in enumerate(self.sorted_nodes):
+            positions = rotated_positions.get(i)
+            if positions is None or positions.size == 0:
+                continue
+            com = G.nodes[node]["ccoords"]
+            positions[:, 1:] = np.dot(positions[:, 1:] - com,
+                                      optimized_rotations[i].T) + com
+        return rotated_positions
+
+    def _build_attachment_lookup_from_positions(self,
+                                                metadata_by_node,
+                                                position_dict):
+        lookup = {}
+        for node_index, metadata in metadata_by_node.items():
+            node_id = self.sorted_nodes[node_index]
+            node_lookup = {}
+            positions = position_dict.get(node_index)
+            if positions is None or positions.size == 0:
+                lookup[node_id] = node_lookup
+                continue
+            for row_index, source_atom_type, source_ordinal in metadata:
+                if row_index >= positions.shape[0]:
+                    continue
+                node_lookup[(str(source_atom_type), int(source_ordinal))] = np.asarray(
+                    positions[row_index][1:],
+                    dtype=float,
+                )
+            lookup[node_id] = node_lookup
+        return lookup
+
     def _get_target_edge_lengths(self):
         target_edge_lengths = {}
         for edge in self.sorted_edges:
@@ -954,19 +1206,14 @@ class NetOptimizer:
         """Build dicts of node positions and X-atom positions per node index from sG and node/EC coords."""
         sorted_nodes = self.sorted_nodes
 
-        def addidx(array):
-            row_indices = np.arange(array.shape[0]).reshape(-1, 1).astype(int)
-            new_array = np.hstack((row_indices, array))
-            return new_array
-
         sc_node_pos_dict = {}
         sc_node_X_pos_dict = {}
         for idx, node in enumerate(sorted_nodes):
             payload = self.node_fragment_payloads[node]
-            sc_node_X_pos_dict[idx] = addidx(sG.nodes[node]["ccoords"] +
-                                             payload["x_coords"])
-            sc_node_pos_dict[idx] = addidx(sG.nodes[node]["ccoords"] +
-                                           payload["coords"])
+            sc_node_X_pos_dict[idx] = self._addidx(sG.nodes[node]["ccoords"] +
+                                                   payload["x_coords"])
+            sc_node_pos_dict[idx] = self._addidx(sG.nodes[node]["ccoords"] +
+                                                 payload["coords"])
         return sc_node_pos_dict, sc_node_X_pos_dict
 
     def _apply_rot_trans2dict(self, sG, sc_node_pos_dict, sc_node_X_pos_dict):

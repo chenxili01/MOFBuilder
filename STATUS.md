@@ -2,9 +2,9 @@
 
 ## Workflow Status
 
-- Phase: Phase 4
-- Checkpoint: phase-4-resolved-anchor-compilation-complete
-- Status: COMPLETED
+- Phase: Phase 5
+- Checkpoint: phase-5-complete
+- Status: READY FOR PLANNER
 - Next step: planner
 - Last update: 2026-03-15
 
@@ -20,33 +20,31 @@ resolved anchors rather than a universal literal `X` bucket.
 
 ## Current Focus
 
-Phase 4 implementation is complete. Builder-owned runtime and optimization
-snapshot compilation now resolve `source_atom_type` from slot/path semantics,
-export explicit resolved-anchor metadata, and preserve legacy literal-`X`
-families as compatibility views rather than the canonical semantic model.
+Phase 5 execution is complete. The next step is planner handoff for the next
+bounded phase after optimizer-local placement now consumes builder-compiled
+resolved anchors for covered role-aware paths.
 
 ## Planner Handoff
 
-1. Phase 4 completed without widening into optimizer-consumption migration,
-   framework changes, graph grammar changes, or constructor-signature changes.
-2. `MetalOrganicFrameworkBuilder` now compiles resolved slot anchors into
-   runtime and optimization snapshot slot rules, including
-   `source_atom_type`, `anchor_source_type`, `anchor_source_ordinal`, and
-   `anchor_vector`.
-3. Optimization graph node and edge records now carry explicit per-edge target
-   anchor metadata derived from semantic graph geometry when node `ccoords`
-   are available, so downstream code can consume compiled anchors instead of
-   reconstructing them from raw attachment buckets.
-4. Legacy literal-`X` fallback remains valid: slot/path resolution prefers a
-   typed source match first and falls back to literal `X` only as
-   compatibility behavior.
-5. Builder tests now cover one typed resolved-anchor compilation case and one
-   legacy literal-`X` resolved-anchor compatibility case.
-6. Validation in this shell remained limited:
-   `python -m compileall src/mofbuilder/core/builder.py tests/test_core_builder.py`
-   passed, but `pytest` is unavailable and the active interpreter also lacks
-   runtime test dependencies such as `networkx`.
-7. Next step is planner handoff for Phase 5 only.
+1. Phase 5 is complete: optimizer-local placement now resolves node and linker
+   anchors from builder-compiled semantic snapshot records instead of treating
+   raw literal-`X` payloads as the universal semantic source.
+2. The implemented scope stayed bounded to `mofbuilder/core/optimizer.py`,
+   `tests/test_core_optimizer.py`, and workflow markdown files.
+3. Typed role-aware placement now consumes compiled `anchor_source_type` and
+   `anchor_source_ordinal` metadata plus typed attachment coordinate tables to
+   place edges from resolved anchors.
+4. Legacy literal-`X` families remain valid only through resolved-anchor
+   compatibility metadata; the optimizer still permits literal `X` placement
+   when the compiled anchor source explicitly resolves to `X`.
+5. Missing or incomplete resolved-anchor inputs now fail with explicit semantic
+   `ValueError`s that identify missing builder-compiled anchor semantics.
+6. Required bounded tests were added for:
+   one typed optimizer-consumption case,
+   one legacy literal-`X` compatibility-through-resolved-anchor case, and
+   one explicit missing-anchor semantic failure case.
+7. Planner should bound the next phase without reopening Phase 5 or widening
+   into framework, graph-grammar, or pipeline-order changes.
 
 ## Invariants
 
