@@ -66,8 +66,8 @@ PLANNER_FILE = resolve_control_path("PLANNER.md")
 EXECUTOR_FILE = resolve_control_path("EXECUTOR.md")
 REVIEWER_FILE = resolve_control_path("REVIEWER.md")
 
-STATUS_FILE = resolve_control_path("STATUS.md")
-WORKLOG_FILE = resolve_control_path("WORKLOG.md")
+STATUS_FILE = resolve_control_path("control/STATUS.md")
+WORKLOG_FILE = resolve_control_path("control/WORKLOG.md")
 REVIEW_FILE = resolve_control_path("REVIEW.md")
 PLANS_FILE = resolve_control_path("PLANS.md")
 CRASH_LOG_FILE = STATE_DIR / "crash.log"

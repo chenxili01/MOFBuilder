@@ -540,7 +540,7 @@ Tests to add/run later:
 
 Exit criteria:
 
-- `PLAN.md` exists as the active planning document
+- `PLANS.md` exists as the active planning document
 - the document contains explicit phase contracts, invariants, and stop rules
 - the document includes at least one minimal metadata example snippet
 
