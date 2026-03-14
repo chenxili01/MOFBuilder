@@ -611,3 +611,182 @@ notes:
 - Checkpoint: phase-3-executor-implemented
 - Status: COMPLETED_PENDING_PLANNER
 - Next step: Planner reviews completion and decides whether to advance
+
+
+## planner-run
+
+- Timestamp: 2026-03-14T20:33:10+00:00
+
+## Active Phase
+- Phase: 4
+- Name: Discrete Ambiguity Handling
+
+## Objective
+Add a passive optimizer-side ambiguity layer that stays strictly inside the already-legal semantic candidate space from Phase 2, runs SVD/Kabsch for each legal correspondence candidate from Phase 3, scores those legal candidates deterministically, and selects the best legal result for one representative ambiguity case without changing optimizer integration behavior yet.
+
+## Scope
+- `src/mofbuilder/core/optimizer.py`
+- `src/mofbuilder/core/optimizer_contract.py`
+- `src/mofbuilder/core/` new optimizer helper module, if needed
+- `tests/test_core_optimizer.py`
+- `STATUS.md`
+
+## Tasks
+1. Add an optimizer-owned discrete ambiguity result surface that wraps a small set of `LegalNodeCorrespondence` candidates plus their Phase 3 rigid-init results, candidate scores, and selected-best metadata for one node.
+2. Implement a passive compiler that takes the Phase 1 `NodePlacementContract` and Phase 2 legal correspondences, runs Phase 3 SVD/Kabsch on each legal candidate, and scores candidates using only post-legality geometric fit signals such as rigid-fit residuals and deterministic tie-break metadata already carried by the contract or correspondence records.
+3. Expose the ambiguity compiler passively from optimizer-owned code so it can be called directly in tests or through `NetOptimizer`, but do not wire it into `rotation_and_cell_optimization`, local refinement, guarded migration flags, builder code, framework code, or legacy-path replacement.
+4. Add tests covering at least one repeated-slot or symmetry ambiguity case where multiple legal candidates exist, each candidate is solved by SVD, the chosen best candidate is deterministic, and an already-unique legal case still behaves as a trivial one-candidate ambiguity result rather than changing placement behavior.
+
+## Validation
+- `python -m py_compile src/mofbuilder/core/optimizer_contract.py src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `python -m pytest tests/test_core_optimizer.py tests/test_core_runtime_snapshot.py`
+- Confirm legality still comes only from semantic correspondence compilation; geometry is used only to score already-legal candidates.
+- Confirm Phase 4 scope only: no local chemistry-aware refinement, no null-edge-specific behavior changes, no builder or framework edits, no broad optimizer-loop wiring, and no legacy-path behavior change.
+
+## Non-goals
+- Any builder snapshot schema, builder wiring, or framework changes.
+- Local chemistry-aware refinement or broader continuous optimization.
+- Null-edge-specific scoring policy beyond preserving existing explicit metadata.
+- Guarded integration into the main optimizer path.
+- Replacing, deleting, or silently changing the legacy optimizer path.
+
+## Exit Criteria
+- A passive discrete ambiguity handler exists in optimizer-owned code and evaluates only the legal candidate set compiled upstream from semantics.
+- Each legal candidate is solved with Phase 3 SVD/Kabsch and scored deterministically before selecting a best legal candidate.
+- Tests cover at least one ambiguity case and one trivial single-candidate case without altering existing optimizer behavior.
+- `STATUS.md` is updated to executor-ready Phase 4 state and no forbidden modules are modified.
+
+## STATUS.md Update
+- Phase: Phase 4
+- Checkpoint: phase-4-plan-ready
+- Status: READY_FOR_EXECUTOR
+- Next step: Executor implements the active phase only
+
+`STATUS.md` was updated at [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md). The higher-precedence files `SNAPSHOT_API_HANDOFF.md`, `OPTIMIZER_DISCUSSION_MEMORY.md`, and `OPTIMIZER_TODO_ROADMAP.md` are still not present in this checkout, so this plan is bounded by the available in-repo control docs and checkpoints.
+
+
+## 2026-03-14 — executor — phase 4 discrete ambiguity handling
+
+branch:
+optimizer-reconstruction
+
+phase:
+Phase 4 — Discrete Ambiguity Handling
+
+checkpoint:
+phase-4-executor-implemented
+
+summary:
+- Added a passive optimizer-owned ambiguity resolution layer that evaluates only the already-legal correspondence candidates compiled in Phase 2.
+- Ran Phase 3 local rigid initialization for each legal candidate, scored candidates by rigid-fit RMSD, and selected the best legal candidate with a deterministic slot-signature tie break.
+- Kept the legacy optimizer path and broad optimization loop unchanged; no refinement, null-edge-specific scoring policy, or integration wiring was added.
+
+files touched:
+- src/mofbuilder/core/optimizer_contract.py
+- src/mofbuilder/core/optimizer.py
+- tests/test_core_optimizer.py
+- WORKLOG.md
+- STATUS.md
+
+invariants checked:
+- Builder remains the owner of role interpretation and snapshot compilation.
+- Optimizer consumes only snapshot-derived contract and correspondence helpers for the new ambiguity layer.
+- Semantic legality remains upstream; geometry is used only to score already-legal candidates.
+- Framework, graph grammar, graph state names, primitive-first ordering, and legacy optimizer behavior were not modified.
+- Null-edge semantics remain explicit metadata only; this phase did not add null-edge-specific behavior.
+
+validation:
+- `python -m py_compile src/mofbuilder/core/optimizer_contract.py src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- Dependency probe confirmed both `numpy` and `pytest` are missing in the active interpreter, so runtime smoke checks and pytest execution could not run in this environment.
+
+notes:
+- The new Phase 4 helper is passive only and exposed through `NetOptimizer.compile_discrete_ambiguity_resolution()`.
+- The higher-precedence files `SNAPSHOT_API_HANDOFF.md`, `OPTIMIZER_DISCUSSION_MEMORY.md`, and `OPTIMIZER_TODO_ROADMAP.md` are still not present in this checkout, so implementation remains bounded by the available in-repo control docs and checkpoints.
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T20:40:00+00:00
+
+## Active Phase
+- Phase: 4
+- Name: Discrete Ambiguity Handling
+
+## Implemented
+- Added `DiscreteAmbiguityCandidate`, `NodeDiscreteAmbiguityResolution`, and `compile_discrete_ambiguity_resolution()` in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py).
+- Implemented passive candidate evaluation that runs Phase 3 rigid initialization for each legal correspondence, scores by RMSD, and breaks ties deterministically by slot-signature order in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py).
+- Added passive `NetOptimizer.compile_discrete_ambiguity_resolution()` in [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py).
+- Added Phase 4 tests for one repeated-slot ambiguity case and one trivial single-candidate case in [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py).
+- Updated [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) and [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md).
+
+## Files Changed
+- `src/mofbuilder/core/optimizer_contract.py`
+- `src/mofbuilder/core/optimizer.py`
+- `tests/test_core_optimizer.py`
+- `WORKLOG.md`
+- `STATUS.md`
+
+## Validation
+- `python -m py_compile src/mofbuilder/core/optimizer_contract.py src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- Runtime smoke execution and `pytest` could not run because `numpy` and `pytest` are not installed in the active interpreter.
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- Full Phase 4 runtime validation still needs an environment with `numpy` and `pytest`.
+- Candidate scoring is intentionally narrow for this phase: RMSD plus deterministic slot-signature tie breaking only. More chemistry-aware scoring remains future-phase work.
+
+## STATUS.md Update
+- Phase: Phase 4
+- Checkpoint: phase-4-executor-implemented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T20:36:14+00:00
+
+## Active Phase
+- Phase: 4
+- Name: Discrete Ambiguity Handling
+
+## Implemented
+- Added passive ambiguity result types and resolution compilation in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py#L198) and [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py#L755).
+- Evaluated only already-legal correspondences, ran Phase 3 rigid initialization per candidate, scored by RMSD, and selected deterministically with slot-signature tie breaking in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py#L743).
+- Exposed the helper passively via [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py#L865).
+- Added Phase 4 tests for a repeated-slot ambiguity case and a trivial single-candidate case in [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py#L779).
+- Updated [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) and [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md).
+
+## Files Changed
+- `src/mofbuilder/core/optimizer_contract.py`
+- `src/mofbuilder/core/optimizer.py`
+- `tests/test_core_optimizer.py`
+- `WORKLOG.md`
+- `STATUS.md`
+
+## Validation
+- `python -m py_compile src/mofbuilder/core/optimizer_contract.py src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- Runtime smoke checks and `pytest` could not run because `numpy` and `pytest` are missing in the active interpreter.
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- Full Phase 4 validation still needs an environment with `numpy` and `pytest`.
+- Candidate scoring is intentionally narrow in this phase: RMSD plus deterministic slot-signature tie breaking only.
+
+## STATUS.md Update
+- Phase: Phase 4
+- Checkpoint: phase-4-executor-implemented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance

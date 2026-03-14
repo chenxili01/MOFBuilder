@@ -4,9 +4,11 @@ import pytest
 
 from mofbuilder.core import optimizer as opt
 from mofbuilder.core.optimizer_contract import (
+    NodeDiscreteAmbiguityResolution,
     LegalNodeCorrespondence,
     NodeLocalRigidInitialization,
     NodePlacementContract,
+    compile_discrete_ambiguity_resolution,
     compile_local_rigid_initialization,
     compile_legal_node_correspondences,
     compile_node_placement_contract,
@@ -772,6 +774,189 @@ def test_compile_local_rigid_initialization_requires_single_known_correspondence
 
     with pytest.raises(ValueError, match="single legal correspondence is required"):
         compile_local_rigid_initialization(semantic_snapshot, "V0")
+
+
+def test_compile_discrete_ambiguity_resolution_scores_legal_candidates_and_selects_best():
+    source_anchors = {
+        0: (1.0, 0.0, 0.0),
+        1: (0.0, 1.0, 0.0),
+    }
+
+    semantic_snapshot = OptimizationSemanticSnapshot(
+        family_name="ROLE-AWARE",
+        graph_phase="sG",
+        graph_node_records={
+            "V0": GraphNodeSemanticRecord(
+                node_id="V0",
+                role_id="node:VA",
+                role_class="V",
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "anchor_vector": source_anchors[0]},
+                    {"attachment_index": 1, "slot_type": "XA", "anchor_vector": source_anchors[1]},
+                ),
+                incident_edge_ids=("V0|C0", "V0|C1"),
+                incident_edge_role_ids=("edge:EA", "edge:EA"),
+                incident_edge_constraints=(
+                    {"edge_id": "V0|C0", "edge_role_id": "edge:EA"},
+                    {"edge_id": "V0|C1", "edge_role_id": "edge:EA"},
+                ),
+            ),
+        },
+        graph_edge_records={
+            "V0|C0": GraphEdgeSemanticRecord(
+                edge_id="V0|C0",
+                graph_edge=("V0", "C0"),
+                edge_role_id="edge:EA",
+                path_type="V-E-C",
+                endpoint_node_ids=("V0", "C0"),
+                endpoint_role_ids=("node:VA", "node:CA"),
+                endpoint_pattern=("VA", "EA", "CA"),
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                ),
+                metadata={"target_point_by_node": {"V0": source_anchors[0]}},
+            ),
+            "V0|C1": GraphEdgeSemanticRecord(
+                edge_id="V0|C1",
+                graph_edge=("V0", "C1"),
+                edge_role_id="edge:EA",
+                path_type="V-E-C",
+                endpoint_node_ids=("V0", "C1"),
+                endpoint_role_ids=("node:VA", "node:CA"),
+                endpoint_pattern=("VA", "EA", "CA"),
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                ),
+                metadata={"target_point_by_node": {"V0": source_anchors[1]}},
+            ),
+        },
+        node_role_records={
+            "node:VA": NodeRoleRecord(
+                role_id="node:VA",
+                family_alias="VA",
+                role_class="V",
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "anchor_vector": source_anchors[0]},
+                    {"attachment_index": 1, "slot_type": "XA", "anchor_vector": source_anchors[1]},
+                ),
+            ),
+        },
+        edge_role_records={
+            "edge:EA": EdgeRoleRecord(
+                role_id="edge:EA",
+                family_alias="EA",
+                role_class="E",
+                endpoint_pattern=("VA", "EA", "CA"),
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                ),
+            ),
+        },
+    )
+
+    optimizer = opt.NetOptimizer(semantic_snapshot=semantic_snapshot)
+    resolution = optimizer.compile_discrete_ambiguity_resolution("V0")
+
+    assert isinstance(resolution, NodeDiscreteAmbiguityResolution)
+    assert resolution.metadata["candidate_count"] == 2
+    assert len(resolution.candidates) == 2
+    assert resolution.selected_candidate.score == pytest.approx(0.0)
+    assert resolution.selected_candidate.tie_break_signature == (0, 1)
+    assert resolution.selected_correspondence.edge_to_slot_index == {"V0|C0": 0, "V0|C1": 1}
+    assert resolution.selected_initialization.rmsd == pytest.approx(0.0)
+    assert sorted(candidate.score for candidate in resolution.candidates)[1] > 0.0
+
+
+def test_compile_discrete_ambiguity_resolution_keeps_unique_case_trivial():
+    semantic_snapshot = OptimizationSemanticSnapshot(
+        family_name="ROLE-AWARE",
+        graph_phase="sG",
+        graph_node_records={
+            "V0": GraphNodeSemanticRecord(
+                node_id="V0",
+                role_id="node:VA",
+                role_class="V",
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "anchor_vector": (1.0, 0.0, 0.0)},
+                    {"attachment_index": 1, "slot_type": "XB", "anchor_vector": (0.0, 1.0, 0.0)},
+                ),
+                incident_edge_ids=("V0|V1", "V0|V2"),
+                incident_edge_role_ids=("edge:EA", "edge:EB"),
+                incident_edge_constraints=(
+                    {"edge_id": "V0|V1", "edge_role_id": "edge:EA", "slot_index": 0},
+                    {"edge_id": "V0|V2", "edge_role_id": "edge:EB", "slot_index": 1},
+                ),
+            ),
+        },
+        graph_edge_records={
+            "V0|V1": GraphEdgeSemanticRecord(
+                edge_id="V0|V1",
+                graph_edge=("V0", "V1"),
+                edge_role_id="edge:EA",
+                path_type="V-E-V",
+                endpoint_node_ids=("V0", "V1"),
+                endpoint_role_ids=("node:VA", "node:VB"),
+                endpoint_pattern=("VA", "EA", "VB"),
+                slot_index={"V0": 0, "V1": 0},
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                ),
+                metadata={"target_point_by_node": {"V0": (1.0, 0.0, 0.0)}},
+            ),
+            "V0|V2": GraphEdgeSemanticRecord(
+                edge_id="V0|V2",
+                graph_edge=("V0", "V2"),
+                edge_role_id="edge:EB",
+                path_type="V-E-V",
+                endpoint_node_ids=("V0", "V2"),
+                endpoint_role_ids=("node:VA", "node:VC"),
+                endpoint_pattern=("VA", "EB", "VC"),
+                slot_index={"V0": 1, "V2": 0},
+                slot_rules=(
+                    {"attachment_index": 1, "slot_type": "XB", "endpoint_side": "V"},
+                ),
+                metadata={"target_point_by_node": {"V0": (0.0, 1.0, 0.0)}},
+            ),
+        },
+        node_role_records={
+            "node:VA": NodeRoleRecord(
+                role_id="node:VA",
+                family_alias="VA",
+                role_class="V",
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "anchor_vector": (1.0, 0.0, 0.0)},
+                    {"attachment_index": 1, "slot_type": "XB", "anchor_vector": (0.0, 1.0, 0.0)},
+                ),
+            ),
+        },
+        edge_role_records={
+            "edge:EA": EdgeRoleRecord(
+                role_id="edge:EA",
+                family_alias="EA",
+                role_class="E",
+                endpoint_pattern=("VA", "EA", "VB"),
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                ),
+            ),
+            "edge:EB": EdgeRoleRecord(
+                role_id="edge:EB",
+                family_alias="EB",
+                role_class="E",
+                endpoint_pattern=("VA", "EB", "VC"),
+                slot_rules=(
+                    {"attachment_index": 1, "slot_type": "XB", "endpoint_side": "V"},
+                ),
+            ),
+        },
+    )
+
+    resolution = compile_discrete_ambiguity_resolution(semantic_snapshot, "V0")
+
+    assert len(resolution.candidates) == 1
+    assert resolution.selected_candidate_index == 0
+    assert resolution.selected_candidate.score == pytest.approx(0.0)
+    assert resolution.selected_correspondence.edge_to_slot_index == {"V0|V1": 0, "V0|V2": 1}
 
 
 def test_get_rot_trans_matrix_uses_superimpose_result(monkeypatch):

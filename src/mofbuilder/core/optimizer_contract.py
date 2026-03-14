@@ -194,6 +194,46 @@ class NodeLocalRigidInitialization:
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
 
 
+@dataclass(frozen=True)
+class DiscreteAmbiguityCandidate:
+    node_id: str
+    node_role_id: str
+    correspondence: LegalNodeCorrespondence
+    rigid_initialization: NodeLocalRigidInitialization
+    score: float
+    tie_break_signature: Tuple[int, ...] = ()
+    metadata: FrozenMapping = field(default_factory=lambda: MappingProxyType({}))
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "tie_break_signature", _freeze_tuple(self.tie_break_signature))
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+
+@dataclass(frozen=True)
+class NodeDiscreteAmbiguityResolution:
+    node_id: str
+    node_role_id: str
+    candidates: Tuple[DiscreteAmbiguityCandidate, ...]
+    selected_candidate_index: int
+    metadata: FrozenMapping = field(default_factory=lambda: MappingProxyType({}))
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "candidates", _freeze_tuple(self.candidates))
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+    @property
+    def selected_candidate(self) -> DiscreteAmbiguityCandidate:
+        return self.candidates[self.selected_candidate_index]
+
+    @property
+    def selected_correspondence(self) -> LegalNodeCorrespondence:
+        return self.selected_candidate.correspondence
+
+    @property
+    def selected_initialization(self) -> NodeLocalRigidInitialization:
+        return self.selected_candidate.rigid_initialization
+
+
 def _select_edge_slot_rule(
     edge_record: GraphEdgeSemanticRecord,
     role_record: Optional[EdgeRoleRecord],
@@ -697,6 +737,80 @@ def compile_local_rigid_initialization(
         ),
         metadata={
             "anchor_count": len(anchor_pairs),
+            "graph_phase": semantic_snapshot.graph_phase,
+        },
+    )
+
+
+def _candidate_tie_break_signature(
+    contract: NodePlacementContract,
+    correspondence: LegalNodeCorrespondence,
+) -> Tuple[int, ...]:
+    return tuple(
+        correspondence.edge_to_slot_index[requirement.edge_id]
+        for requirement in contract.incident_requirements
+    )
+
+
+def compile_discrete_ambiguity_resolution(
+    semantic_snapshot: OptimizationSemanticSnapshot,
+    node_id: str,
+    node_contract: Optional[NodePlacementContract] = None,
+    correspondences: Optional[Tuple[LegalNodeCorrespondence, ...]] = None,
+) -> NodeDiscreteAmbiguityResolution:
+    contract = node_contract or compile_node_placement_contract(semantic_snapshot, node_id)
+    legal_correspondences = correspondences
+    if legal_correspondences is None:
+        legal_correspondences = compile_legal_node_correspondences(
+            semantic_snapshot,
+            node_id,
+            node_contract=contract,
+        )
+    if not legal_correspondences:
+        raise ValueError("At least one legal correspondence is required for discrete ambiguity handling.")
+
+    candidates = []
+    for candidate_index, correspondence in enumerate(legal_correspondences):
+        rigid_initialization = compile_local_rigid_initialization(
+            semantic_snapshot,
+            node_id,
+            node_contract=contract,
+            correspondence=correspondence,
+        )
+        tie_break_signature = _candidate_tie_break_signature(contract, correspondence)
+        candidates.append(
+            DiscreteAmbiguityCandidate(
+                node_id=contract.node_id,
+                node_role_id=contract.node_role_id,
+                correspondence=correspondence,
+                rigid_initialization=rigid_initialization,
+                score=float(rigid_initialization.rmsd),
+                tie_break_signature=tie_break_signature,
+                metadata={
+                    "candidate_index": candidate_index,
+                    "fit_metric": "rmsd",
+                    "anchor_count": len(rigid_initialization.anchor_pairs),
+                },
+            )
+        )
+
+    selected_candidate_index = min(
+        range(len(candidates)),
+        key=lambda idx: (
+            candidates[idx].score,
+            candidates[idx].tie_break_signature,
+            idx,
+        ),
+    )
+
+    return NodeDiscreteAmbiguityResolution(
+        node_id=contract.node_id,
+        node_role_id=contract.node_role_id,
+        candidates=tuple(candidates),
+        selected_candidate_index=selected_candidate_index,
+        metadata={
+            "candidate_count": len(candidates),
+            "selection_policy": "lowest_rmsd_then_slot_signature",
             "graph_phase": semantic_snapshot.graph_phase,
         },
     )
