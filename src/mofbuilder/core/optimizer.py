@@ -25,6 +25,7 @@ from ..utils.geometry import (unit_cell_to_cartesian_matrix,
                               fractional_to_cartesian, cartesian_to_fractional,
                               locate_min_idx, reorthogonalize_matrix,
                               find_optimal_pairings, find_edge_pairings)
+from .optimizer_contract import compile_node_placement_contract
 from .other import fetch_X_atoms_ind_array
 from .runtime_snapshot import OptimizationSemanticSnapshot
 from .superimpose import superimpose_rotation_only
@@ -813,6 +814,16 @@ class NetOptimizer:
                 T_unitcell, sG.nodes[n]["fcoords"].T).T
             sG.nodes[n]["ccoords"] = updated_ccoords[n]
         return sG, updated_ccoords
+
+    def compile_node_placement_contract(self,
+                                        node_id,
+                                        semantic_snapshot=None):
+        snapshot = semantic_snapshot or self.semantic_snapshot
+        if snapshot is None:
+            raise ValueError(
+                "OptimizationSemanticSnapshot is required to compile a node placement contract."
+            )
+        return compile_node_placement_contract(snapshot, node_id)
 
 
 class OptimizationDriver:

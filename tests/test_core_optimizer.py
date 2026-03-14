@@ -3,7 +3,19 @@ import networkx as nx
 import pytest
 
 from mofbuilder.core import optimizer as opt
-from mofbuilder.core.runtime_snapshot import OptimizationSemanticSnapshot
+from mofbuilder.core.optimizer_contract import (
+    NodePlacementContract,
+    compile_node_placement_contract,
+)
+from mofbuilder.core.runtime_snapshot import (
+    BundleRecord,
+    EdgeRoleRecord,
+    GraphEdgeSemanticRecord,
+    GraphNodeSemanticRecord,
+    NodeRoleRecord,
+    NullEdgePolicyRecord,
+    OptimizationSemanticSnapshot,
+)
 
 
 def _fragment_table(rows):
@@ -89,6 +101,226 @@ def test_rotation_and_cell_optimization_stores_optional_semantic_snapshot(
         optimizer.rotation_and_cell_optimization(semantic_snapshot=semantic_snapshot)
 
     assert optimizer.semantic_snapshot is semantic_snapshot
+
+
+def test_compile_node_placement_contract_supports_default_role_snapshot():
+    semantic_snapshot = OptimizationSemanticSnapshot(
+        family_name="DEFAULT-FAMILY",
+        graph_phase="G",
+        graph_node_records={
+            "V0": GraphNodeSemanticRecord(
+                node_id="V0",
+                role_id="node:default",
+                role_class="V",
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA"},
+                    {"attachment_index": 1, "slot_type": "XB"},
+                ),
+                incident_edge_ids=("V0|V1", "V0|V2"),
+                incident_edge_role_ids=("edge:default", "edge:default"),
+                incident_edge_constraints=(
+                    {"edge_id": "V0|V1", "edge_role_id": "edge:default", "slot_index": 0},
+                    {"edge_id": "V0|V2", "edge_role_id": "edge:default", "slot_index": 1},
+                ),
+            ),
+        },
+        graph_edge_records={
+            "V0|V1": GraphEdgeSemanticRecord(
+                edge_id="V0|V1",
+                graph_edge=("V0", "V1"),
+                edge_role_id="edge:default",
+                path_type="V-E-V",
+                endpoint_node_ids=("V0", "V1"),
+                endpoint_role_ids=("node:default", "node:default"),
+                endpoint_pattern=("VA", "EA", "VA"),
+                slot_index={"V0": 0, "V1": 0},
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                ),
+            ),
+            "V0|V2": GraphEdgeSemanticRecord(
+                edge_id="V0|V2",
+                graph_edge=("V0", "V2"),
+                edge_role_id="edge:default",
+                path_type="V-E-V",
+                endpoint_node_ids=("V0", "V2"),
+                endpoint_role_ids=("node:default", "node:default"),
+                endpoint_pattern=("VA", "EA", "VA"),
+                slot_index={"V0": 1, "V2": 0},
+                slot_rules=(
+                    {"attachment_index": 1, "slot_type": "XB", "endpoint_side": "V"},
+                ),
+            ),
+        },
+        node_role_records={
+            "node:default": NodeRoleRecord(
+                role_id="node:default",
+                family_alias="default",
+                role_class="V",
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA"},
+                    {"attachment_index": 1, "slot_type": "XB"},
+                ),
+            ),
+        },
+        edge_role_records={
+            "edge:default": EdgeRoleRecord(
+                role_id="edge:default",
+                family_alias="default",
+                role_class="E",
+                endpoint_pattern=("VA", "EA", "VA"),
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                    {"attachment_index": 1, "slot_type": "XB", "endpoint_side": "V"},
+                ),
+            ),
+        },
+    )
+
+    contract = compile_node_placement_contract(semantic_snapshot, "V0")
+
+    assert isinstance(contract, NodePlacementContract)
+    assert contract.node_role_id == "node:default"
+    assert contract.local_slot_types == ("XA", "XB")
+    assert contract.incident_edge_ids == ("V0|V1", "V0|V2")
+    assert contract.incident_requirements[0].required_slot_type == "XA"
+    assert contract.incident_requirements[1].required_slot_type == "XB"
+    assert contract.incident_requirements[0].target_direction.remote_node_id == "V1"
+    assert contract.null_edge_flags == {"V0|V1": False, "V0|V2": False}
+
+
+def test_compile_node_placement_contract_preserves_role_aware_bundle_and_null_edge_hints():
+    semantic_snapshot = OptimizationSemanticSnapshot(
+        family_name="ROLE-AWARE",
+        graph_phase="sG",
+        graph_node_records={
+            "C0": GraphNodeSemanticRecord(
+                node_id="C0",
+                role_id="node:CA",
+                role_class="C",
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA"},
+                    {"attachment_index": 1, "slot_type": "XB"},
+                ),
+                incident_edge_ids=("V0|C0", "V1|C0"),
+                incident_edge_role_ids=("edge:EA", "edge:EB"),
+                incident_edge_constraints=(
+                    {"edge_id": "V0|C0", "edge_role_id": "edge:EA", "slot_index": 0},
+                    {"edge_id": "V1|C0", "edge_role_id": "edge:EB", "slot_index": 1},
+                ),
+                bundle_id="bundle:CA:0",
+                bundle_order_hint={"ordered_attachment_indices": (0, 1)},
+            ),
+        },
+        graph_edge_records={
+            "V0|C0": GraphEdgeSemanticRecord(
+                edge_id="V0|C0",
+                graph_edge=("V0", "C0"),
+                edge_role_id="edge:EA",
+                path_type="V-E-C",
+                endpoint_node_ids=("V0", "C0"),
+                endpoint_role_ids=("node:VA", "node:CA"),
+                endpoint_pattern=("VA", "EA", "CA"),
+                slot_index={"V0": 0, "C0": 0},
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "C"},
+                ),
+                bundle_id="bundle:CA:0",
+                bundle_order_index=0,
+                resolve_mode="ownership_transfer",
+            ),
+            "V1|C0": GraphEdgeSemanticRecord(
+                edge_id="V1|C0",
+                graph_edge=("V1", "C0"),
+                edge_role_id="edge:EB",
+                path_type="V-E-C",
+                endpoint_node_ids=("V1", "C0"),
+                endpoint_role_ids=("node:VB", "node:CA"),
+                endpoint_pattern=("VB", "EB", "CA"),
+                slot_index={"V1": 0, "C0": 1},
+                slot_rules=(
+                    {"attachment_index": 1, "slot_type": "XB", "endpoint_side": "C"},
+                ),
+                bundle_id="bundle:CA:0",
+                bundle_order_index=1,
+                resolve_mode="alignment_only",
+                is_null_edge=True,
+                null_payload_model="duplicated_zero_length_anchors",
+                allows_null_fallback=True,
+            ),
+        },
+        node_role_records={
+            "node:CA": NodeRoleRecord(
+                role_id="node:CA",
+                family_alias="CA",
+                role_class="C",
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA"},
+                    {"attachment_index": 1, "slot_type": "XB"},
+                ),
+            ),
+        },
+        edge_role_records={
+            "edge:EA": EdgeRoleRecord(
+                role_id="edge:EA",
+                family_alias="EA",
+                role_class="E",
+                endpoint_pattern=("VA", "EA", "CA"),
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "C"},
+                ),
+                resolve_mode="ownership_transfer",
+            ),
+            "edge:EB": EdgeRoleRecord(
+                role_id="edge:EB",
+                family_alias="EB",
+                role_class="E",
+                endpoint_pattern=("VB", "EB", "CA"),
+                slot_rules=(
+                    {"attachment_index": 1, "slot_type": "XB", "endpoint_side": "C"},
+                ),
+                resolve_mode="alignment_only",
+            ),
+        },
+        bundle_records={
+            "bundle:CA:0": BundleRecord(
+                bundle_id="bundle:CA:0",
+                owner_role_id="node:CA",
+                attachment_edge_role_ids=("edge:EA", "edge:EB"),
+                ordered_attachment_indices=(0, 1),
+                order_kind="clockwise_local_topology",
+            ),
+        },
+        null_edge_policy_records={
+            "edge:EB": NullEdgePolicyRecord(
+                edge_role_id="edge:EB",
+                edge_kind="null",
+                is_null_edge=True,
+                null_payload_model="duplicated_zero_length_anchors",
+                allows_null_fallback=True,
+            ),
+        },
+    )
+
+    optimizer = opt.NetOptimizer(semantic_snapshot=semantic_snapshot)
+    contract = optimizer.compile_node_placement_contract("C0")
+
+    assert contract.node_role_id == "node:CA"
+    assert contract.bundle_id == "bundle:CA:0"
+    assert contract.bundle_ordered_attachment_indices == (0, 1)
+    assert contract.bundle_order_kind == "clockwise_local_topology"
+    assert contract.resolve_mode_hints == ("ownership_transfer", "alignment_only")
+    assert contract.null_edge_flags == {"V0|C0": False, "V1|C0": True}
+    assert contract.incident_requirements[1].required_slot_type == "XB"
+    assert contract.incident_requirements[1].is_null_edge is True
+    assert contract.incident_requirements[1].target_direction.remote_role_id == "node:VB"
+
+
+def test_compile_node_placement_contract_requires_snapshot():
+    optimizer = opt.NetOptimizer()
+
+    with pytest.raises(ValueError, match="OptimizationSemanticSnapshot is required"):
+        optimizer.compile_node_placement_contract("V0")
 
 
 def test_get_rot_trans_matrix_uses_superimpose_result(monkeypatch):
