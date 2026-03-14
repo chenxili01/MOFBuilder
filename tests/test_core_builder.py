@@ -266,9 +266,19 @@ def test_initialize_role_registries_normalizes_scalar_inputs_to_default_roles():
         "keywords": ["6c", "Zr"],
         "exclude_keywords": ["dummy"],
     }
+    assert builder.node_role_registry["node:default"]["metadata_reference"] == {
+        "source": "legacy_default",
+        "role_id": "node:default",
+        "connectivity": 6,
+    }
     assert builder.edge_role_registry["edge:default"]["fragment_source"] == {
         "kind": "smiles",
         "value": "C1=CC=CC=C1",
+    }
+    assert builder.edge_role_registry["edge:default"]["metadata_reference"] == {
+        "source": "legacy_default",
+        "role_id": "edge:default",
+        "connectivity": 2,
     }
     assert builder.edge_role_registry["edge:default"]["linker_charge"] == -2
     assert builder.edge_role_registry["edge:default"]["linker_multiplicity"] == 1
@@ -322,6 +332,14 @@ def test_role_registries_consume_phase_two_metadata_without_local_role_maps():
     assert builder.edge_role_registry["edge:ditopic"]["fragment_source"] == {
         "kind": "xyzfile",
         "value": "tests/database/example_linker.xyz",
+    }
+    assert builder.node_role_registry["node:cluster"]["metadata_reference"] == {
+        "source": "role_metadata",
+        "role_entry": builder.mof_top_library.role_metadata["node_roles"][0],
+    }
+    assert builder.edge_role_registry["edge:ditopic"]["metadata_reference"] == {
+        "source": "role_metadata",
+        "role_entry": builder.mof_top_library.role_metadata["edge_roles"][1],
     }
 
     builder.frame_nodes.filename = "tests/database/node_8c_Zn.pdb"
@@ -380,6 +398,14 @@ def test_role_registries_consume_canonical_sidecar_through_moftoplibrary_seam(
     assert builder.node_role_specs["node:VA"]["expected_connectivity"] == 4
     assert builder.edge_role_specs["edge:EA"]["linker_connectivity"] == 4
     assert builder.edge_role_specs["edge:EB"]["linker_connectivity"] == 4
+    assert (
+        builder.node_role_registry["node:VA"]["metadata_reference"]["source"]
+        == "canonical_role_metadata"
+    )
+    assert (
+        builder.edge_role_registry["edge:EB"]["metadata_reference"]["edge_kind_rule"]
+        == expected_metadata["edge_kind_rules"]["EB"]
+    )
 
     builder.linker_center_data = np.array([["C"]], dtype=object)
     builder.linker_center_X_data = np.array([["X"]], dtype=object)
@@ -547,6 +573,11 @@ def test_load_and_optimize_framework_single_role_keeps_scalar_state_and_passes_d
             "role_id": "node:default",
             "expected_connectivity": 6,
             "topology_labels": [],
+            "metadata_reference": {
+                "source": "legacy_default",
+                "role_id": "node:default",
+                "connectivity": 6,
+            },
             "node_metal": "Zr",
             "dummy_atom_node": False,
             "fragment_source": {
@@ -565,6 +596,11 @@ def test_load_and_optimize_framework_single_role_keeps_scalar_state_and_passes_d
             "role_id": "edge:default",
             "linker_connectivity": 2,
             "topology_labels": [],
+            "metadata_reference": {
+                "source": "legacy_default",
+                "role_id": "edge:default",
+                "connectivity": 2,
+            },
             "fragment_source": {
                 "kind": "smiles",
                 "value": "C1=CC=CC=C1",
@@ -657,3 +693,59 @@ def test_read_net_calls_framenet_role_validation_before_registry_initialization(
     assert builder.G.nodes["V0"]["node_role_id"] == "node:VA"
     assert builder.G.nodes["C0"]["node_role_id"] == "node:CA"
     assert builder.G.edges["V0", "C0"]["edge_role_id"] == "edge:EA"
+
+
+@pytest.mark.core
+def test_read_net_normalizes_alias_role_ids_on_graph_before_registry_build(
+    monkeypatch,
+):
+    builder = MetalOrganicFrameworkBuilder(mof_family="TEST-MULTI")
+    builder.data_path = "tests/database"
+
+    created_graph = nx.Graph()
+    created_graph.add_node("V0", note="V", node_role_id="VA")
+    created_graph.add_node("C0", note="CV", node_role_id="CA")
+    created_graph.add_edge(
+        "V0",
+        "C0",
+        edge_role_id="EA",
+        slot_index={"V0": 0, "C0": 0},
+        cyclic_edge_order={"C0": 0},
+    )
+    created_graph.nodes["C0"]["cyclic_edge_order"] = [("V0", "C0")]
+
+    expected_metadata = _canonical_family_role_metadata()
+    expected_metadata["connectivity_rules"]["VA"] = {"incident_edge_aliases": ["EA"]}
+    expected_metadata["connectivity_rules"]["CA"] = {"incident_edge_aliases": ["EA"]}
+
+    def fake_fetch(_mof_family):
+        builder.mof_top_library.node_connectivity = 1
+        builder.mof_top_library.role_metadata = {
+            "schema": "mof_topology_role_metadata/v1",
+            "canonical_role_metadata": expected_metadata,
+        }
+        builder.mof_top_library.canonical_role_metadata = expected_metadata
+        return "tests/database/template_database/MOF-TEST.cif"
+
+    def fake_create_net():
+        builder.frame_net.max_degree = 1
+        builder.frame_net.cifreader.spacegroup = "P1"
+        builder.frame_net.cell_info = [10.0, 10.0, 10.0, 90.0, 90.0, 90.0]
+        builder.frame_net.unit_cell = np.eye(3)
+        builder.frame_net.unit_cell_inv = np.eye(3)
+        builder.frame_net.linker_connectivity = 2
+        builder.frame_net.sorted_nodes = ["V0", "C0"]
+        builder.frame_net.sorted_edges = [("V0", "C0")]
+        builder.frame_net.pair_vertex_edge = [("V0", "C0", "EA0")]
+        builder.frame_net.G = created_graph.copy()
+
+    monkeypatch.setattr(builder.mof_top_library, "fetch", fake_fetch)
+    monkeypatch.setattr(builder.frame_net, "create_net", fake_create_net)
+
+    builder._read_net()
+
+    assert builder.frame_net.G.nodes["V0"]["node_role_id"] == "node:VA"
+    assert builder.frame_net.G.nodes["C0"]["node_role_id"] == "node:CA"
+    assert builder.frame_net.G.edges["V0", "C0"]["edge_role_id"] == "edge:EA"
+    assert list(builder.node_role_registry) == ["node:VA", "node:CA"]
+    assert list(builder.edge_role_registry) == ["edge:EA"]

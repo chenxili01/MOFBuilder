@@ -2,10 +2,10 @@
 
 ## Workflow Status
 
-- Phase: Phase 3
-- Checkpoint: phase-3-validation-implemented
+- Phase: Phase 4
+- Checkpoint: phase-4-executor-complete
 - Status: COMPLETED_PENDING_PLANNER
-- Next step: Planner reviews Phase 3 completion and decides whether to advance
+- Next step: Planner reviews completion and decides whether to advance
 - Last update: 2026-03-14
 
 ## Branch
@@ -18,7 +18,7 @@ Implement the role-based topology semantics defined in `ROUND1_CHECKPOINT.md` an
 
 ## Current Focus
 
-Phase 3 execution completed: `FrameNet.validate_roles()` and the minimal builder-side pre-optimization validation hook are in place, with focused tests added for the validation path and builder call seam. Planner review is required before any later-phase work.
+Phase 4 executor work is complete. The builder now normalizes graph-stored role ids into canonical runtime ids, compiles graph-driven `node_role_registry` and `edge_role_registry` entries with metadata references, preserves the legacy single-role path, and stops before any Phase 5 bundle compilation or optimizer/framework changes.
 
 ## Invariants
 

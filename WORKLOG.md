@@ -538,3 +538,126 @@ notes:
 - Checkpoint: phase-3-validation-implemented
 - Status: COMPLETED_PENDING_PLANNER
 - Next step: Planner reviews completion and decides whether to advance
+
+
+## planner-run
+
+- Timestamp: 2026-03-14T10:17:37+00:00
+
+## Active Phase
+- Phase: 4
+- Name: Builder Role Registries
+
+## Objective
+Finalize the Phase 4 builder-owned role-registry path in `src/mofbuilder/core/builder.py` so the builder normalizes graph role identifiers into canonical runtime ids, builds `node_role_registry` and `edge_role_registry` from topology metadata or legacy defaults, and preserves the existing single-role workflow without entering Phase 5 bundle compilation.
+
+## Scope
+- `src/mofbuilder/core/builder.py`
+- `tests/test_core_builder.py`
+
+## Tasks
+1. Audit the existing Phase 4 scaffolding in `MetalOrganicFrameworkBuilder`, specifically `_build_role_spec_map()`, `_initialize_role_registries()`, `_read_net()`, `_update_node_role_registry_data()`, and `_update_edge_role_registry_data()`, and keep all execution inside `builder.py`.
+2. Ensure builder normalization is graph-driven: consume the role ids already stamped on `self.frame_net.G`, preserve graph-stored role ids as the topology source of truth, and normalize the legacy no-metadata path to `node:default` / `edge:default` without changing public APIs or constructor behavior.
+3. Build or tighten `node_role_registry` and `edge_role_registry` entries so each registry record contains the canonical `role_id`, the relevant connectivity field, and a stable metadata reference or derived metadata view from `MofTopLibrary`, while keeping scalar fragment inputs as the payload/config source for the matching default or active roles.
+4. Verify the builder passes the finalized registries downstream exactly as registries, without moving interpretation into `FrameNet`, `NetOptimizer`, or `Framework`, and without introducing bundle ids, resolve scaffolding, or fragment-merging behavior.
+5. Add focused builder tests that cover both paths: legacy single-role normalization and role-aware canonical metadata ingestion, including assertions that graph role ids remain consistent and the registries contain the expected normalized entries for the active roles.
+
+## Validation
+- `tests/test_core_builder.py` proves legacy families still normalize to `node:default` and `edge:default`.
+- `tests/test_core_builder.py` proves canonical role-aware metadata produces normalized builder registries with the expected role ids and connectivity fields.
+- A targeted builder-path check confirms the graph remains the source of truth for `node_role_id` / `edge_role_id` and builder owns only registry compilation.
+- Self-review confirms no production modules outside `src/mofbuilder/core/builder.py` were modified.
+
+## Non-goals
+- No changes to `src/mofbuilder/core/net.py`, optimizer logic, framework assembly, supercell behavior, linker splitting, defects, or write/export paths.
+- No Phase 5 work: do not compile linker bundles, assign `bundle_id`, or consume `cyclic_edge_order` beyond what is needed to preserve Phase 4 boundaries.
+- No resolve preparation or execution, no provenance scaffolding, and no expansion beyond the `V-E-V` / `V-E-C` grammar.
+
+## Exit Criteria
+- `MetalOrganicFrameworkBuilder` builds consistent `node_role_registry` and `edge_role_registry` entries for both canonical role-aware and legacy single-role families.
+- Canonical runtime ids are the builder registry keys, while graph role ids remain stored on graph elements and stay consistent with the builder normalization path.
+- The implementation remains confined to Phase 4 scope and stops before any bundle-compilation or resolve-related behavior.
+
+## STATUS.md Update
+- Phase: Phase 4
+- Checkpoint: phase-4-plan-finalized
+- Status: READY_FOR_EXECUTOR
+- Next step: Executor implements the active phase only
+
+`STATUS.md` was updated accordingly in [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md).
+
+## 2026-03-14 — executor — complete phase 4 builder role registries
+
+branch:
+mofbuilder-role-refactor
+
+phase:
+Phase 4 — Builder Role Registries
+
+summary:
+- Tightened `MetalOrganicFrameworkBuilder` role normalization so `_read_net()` canonicalizes graph-stored `node_role_id` and `edge_role_id` values to runtime ids before validation and registry compilation.
+- Made Phase 4 registry compilation graph-driven by filtering builder role specs to the normalized role ids present on the active topology graph while preserving the legacy `node:default` / `edge:default` path when no graph-scoped role set exists.
+- Added explicit `metadata_reference` payloads to `node_role_registry` and `edge_role_registry` entries so registry records now carry a stable passive metadata view from canonical family metadata, compatibility metadata, or the legacy default fallback.
+- Added focused builder tests for the new metadata-reference behavior and for alias-to-canonical graph normalization before registry build.
+
+files touched:
+- src/mofbuilder/core/builder.py
+- tests/test_core_builder.py
+- WORKLOG.md
+- STATUS.md
+
+invariants checked:
+- Topology graph remains the source of truth; builder only normalizes and consumes graph role ids, and does not move role interpretation into framework or optimizer modules.
+- Scope stayed within the Phase 4 allowance: production changes were limited to `src/mofbuilder/core/builder.py`, with test coverage confined to `tests/test_core_builder.py`.
+- Backward compatibility was preserved for the single-role path by keeping `node:default` and `edge:default` registries and scalar linker/node inputs unchanged.
+- No Phase 5 or later behavior was added: no bundle compilation, no `bundle_id`, no resolve scaffolding, and no optimizer/framework ownership changes.
+- Null-edge semantics were preserved as passive metadata only; no runtime null-edge execution path was introduced in this phase.
+
+notes:
+- Validation run: `python -m compileall src/mofbuilder/core/builder.py tests/test_core_builder.py`.
+- Validation blocked: `python -m pytest -q tests/test_core_builder.py` could not run because `pytest` is not installed in the active environment.
+- Additional runtime spot-checking was blocked because the active Python environment does not have `networkx` installed.
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T10:21:26+00:00
+
+## Active Phase
+- Phase: 4
+- Name: Builder Role Registries
+
+## Implemented
+- Normalized graph-stored role ids in [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py) so `_read_net()` canonicalizes aliases like `VA` / `EA` to `node:VA` / `edge:EA` before validation and registry compilation.
+- Made builder registry compilation graph-driven in [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py) by filtering role specs to the active normalized role ids present on the topology graph, while preserving the legacy `node:default` / `edge:default` path.
+- Added `metadata_reference` records to `node_role_registry` and `edge_role_registry` in [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py), sourced from canonical metadata, compatibility metadata, or legacy defaults.
+- Extended [test_core_builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_builder.py) to cover metadata-reference population and alias-to-canonical graph normalization before registry build.
+- Updated [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) and [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) for planner handoff.
+
+## Files Changed
+- [src/mofbuilder/core/builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py)
+- [tests/test_core_builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_builder.py)
+- [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md)
+- [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md)
+
+## Validation
+- Ran `python -m compileall src/mofbuilder/core/builder.py tests/test_core_builder.py`.
+- `python -m pytest -q tests/test_core_builder.py` could not run because `pytest` is not installed.
+- Direct runtime spot-checking could not run because the active Python environment is missing `networkx`.
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- Full behavioral validation is still pending in an environment with `pytest` installed.
+- Runtime sanity checks are still pending in an environment with `networkx` available.
+
+## STATUS.md Update
+- Phase: Phase 4
+- Checkpoint: phase-4-executor-complete
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance

@@ -329,6 +329,127 @@ class MetalOrganicFrameworkBuilder:
             }
         }
 
+    def _normalize_runtime_role_id(self, role_id, *, namespace):
+        role_id = str(role_id or "").strip()
+        if not role_id:
+            return f"{namespace}:default"
+        if role_id == f"{namespace}:default":
+            return role_id
+        if role_id.startswith(f"{namespace}:"):
+            return role_id
+
+        role_alias = role_id.split(":", 1)[-1]
+        if namespace == "node" and role_alias.startswith(("V", "C")):
+            return f"node:{role_alias}"
+        if namespace == "edge" and role_alias.startswith("E"):
+            return f"edge:{role_alias}"
+        return role_id
+
+    def _normalize_graph_role_ids(self):
+        if self.frame_net.G is None:
+            return
+
+        for node_name, node_data in self.frame_net.G.nodes(data=True):
+            node_data["node_role_id"] = self._normalize_runtime_role_id(
+                node_data.get("node_role_id"),
+                namespace="node",
+            )
+
+        for edge in self.frame_net.G.edges():
+            self.frame_net.G.edges[edge]["edge_role_id"] = (
+                self._normalize_runtime_role_id(
+                    self.frame_net.G.edges[edge].get("edge_role_id"),
+                    namespace="edge",
+                )
+            )
+
+    def _get_active_graph_role_ids(self, *, namespace):
+        graph = self.G if self.G is not None else getattr(self.frame_net, "G", None)
+        if graph is None:
+            return set()
+
+        if namespace == "node":
+            return {
+                self._normalize_runtime_role_id(
+                    node_data.get("node_role_id"),
+                    namespace="node",
+                )
+                for _, node_data in graph.nodes(data=True)
+            }
+
+        return {
+            self._normalize_runtime_role_id(
+                graph.edges[edge].get("edge_role_id"),
+                namespace="edge",
+            )
+            for edge in graph.edges()
+        }
+
+    def _build_role_metadata_reference(self, role_id, spec, *, namespace):
+        if role_id.endswith(":default"):
+            return {
+                "source": "legacy_default",
+                "role_id": role_id,
+                "connectivity": spec.get("expected_connectivity")
+                if namespace == "node"
+                else spec.get("linker_connectivity"),
+            }
+
+        role_alias = role_id.split(":", 1)[1] if ":" in role_id else role_id
+        canonical_metadata = getattr(self.mof_top_library, "canonical_role_metadata", None)
+        if canonical_metadata and role_alias in canonical_metadata.get("roles", {}):
+            return {
+                "source": "canonical_role_metadata",
+                "role_alias": role_alias,
+                "role": canonical_metadata["roles"].get(role_alias),
+                "connectivity_rule": canonical_metadata.get(
+                    "connectivity_rules", {}
+                ).get(role_alias),
+                "path_rules": [
+                    rule
+                    for rule in canonical_metadata.get("path_rules", [])
+                    if str(rule.get("edge_alias")) == role_alias
+                    or role_alias in rule.get("endpoint_pattern", [])
+                ],
+                "edge_kind_rule": canonical_metadata.get("edge_kind_rules", {}).get(
+                    role_alias
+                ),
+                "fragment_lookup_hint": canonical_metadata.get(
+                    "fragment_lookup_hints", {}
+                ).get(role_alias),
+            }
+
+        for role_entry in (
+            (self.role_metadata or {}).get("node_roles", [])
+            if namespace == "node"
+            else (self.role_metadata or {}).get("edge_roles", [])
+        ):
+            if str(role_entry.get("role_id")) == role_id:
+                return {
+                    "source": "role_metadata",
+                    "role_entry": role_entry,
+                }
+
+        return {
+            "source": "graph_derived",
+            "role_id": role_id,
+            "topology_labels": list(spec.get("topology_labels", [])),
+        }
+
+    def _filter_role_specs_to_active_graph_roles(self, role_specs, *, namespace):
+        active_role_ids = self._get_active_graph_role_ids(namespace=namespace)
+        if not active_role_ids:
+            return role_specs
+
+        filtered_specs = {
+            role_id: spec
+            for role_id, spec in role_specs.items()
+            if role_id in active_role_ids
+        }
+        if filtered_specs:
+            return filtered_specs
+        return role_specs
+
     def _get_linker_fragment_source(self):
         if self.linker_molecule is not None:
             return {"kind": "molecule", "value": self.linker_molecule}
@@ -342,17 +463,25 @@ class MetalOrganicFrameworkBuilder:
         self.role_metadata = self.mof_top_library.role_metadata
         metadata = self.role_metadata or {}
 
-        self.node_role_specs = self._build_role_spec_map(
+        node_role_specs = self._build_role_spec_map(
             metadata.get("node_roles"),
             default_role_id="node:default",
             connectivity_key="expected_connectivity",
             default_connectivity=self.node_connectivity,
         )
-        self.edge_role_specs = self._build_role_spec_map(
+        edge_role_specs = self._build_role_spec_map(
             metadata.get("edge_roles"),
             default_role_id="edge:default",
             connectivity_key="linker_connectivity",
             default_connectivity=self.linker_connectivity,
+        )
+        self.node_role_specs = self._filter_role_specs_to_active_graph_roles(
+            node_role_specs,
+            namespace="node",
+        )
+        self.edge_role_specs = self._filter_role_specs_to_active_graph_roles(
+            edge_role_specs,
+            namespace="edge",
         )
 
         self.node_role_registry = {}
@@ -364,6 +493,11 @@ class MetalOrganicFrameworkBuilder:
                 "role_id": role_id,
                 "expected_connectivity": spec["expected_connectivity"],
                 "topology_labels": list(spec["topology_labels"]),
+                "metadata_reference": self._build_role_metadata_reference(
+                    role_id,
+                    spec,
+                    namespace="node",
+                ),
                 "node_metal": self.node_metal,
                 "dummy_atom_node": self.dummy_atom_node,
                 "fragment_source": {
@@ -384,6 +518,11 @@ class MetalOrganicFrameworkBuilder:
                 "role_id": role_id,
                 "linker_connectivity": spec["linker_connectivity"],
                 "topology_labels": list(spec["topology_labels"]),
+                "metadata_reference": self._build_role_metadata_reference(
+                    role_id,
+                    spec,
+                    namespace="edge",
+                ),
                 "fragment_source": dict(linker_source),
                 "linker_charge": self.linker_charge,
                 "linker_multiplicity": self.linker_multiplicity,
@@ -442,6 +581,7 @@ class MetalOrganicFrameworkBuilder:
             "Template cif file is not set in mof_top_library.")
         self.frame_net.edge_length_range = self.linker_frag_length_search_range
         self.frame_net.create_net()
+        self._normalize_graph_role_ids()
         validation_result = self.frame_net.validate_roles(
             role_metadata=self.mof_top_library.canonical_role_metadata
         )
