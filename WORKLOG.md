@@ -229,3 +229,167 @@ notes:
 - Checkpoint: phase-1-record-types-implemented
 - Status: COMPLETED_PENDING_PLANNER
 - Next step: Planner reviews completion and decides whether to advance
+
+
+## planner-run
+
+- Timestamp: 2026-03-14T15:15:53+00:00
+
+## Active Phase
+- Phase: 2
+- Name: Builder Runtime Snapshot Export
+
+## Objective
+Phase 2 adds builder-owned snapshot compilation/export methods so the builder can expose stable runtime snapshots from existing builder state and Phase 1 record types, without changing optimizer behavior, framework behavior, graph ownership, or pipeline order.
+
+## Scope
+- `src/mofbuilder/core/builder.py`
+- `src/mofbuilder/core/runtime_snapshot.py`
+- `tests/test_core_builder.py`
+- `tests/test_core_runtime_snapshot.py`
+
+## Tasks
+1. Add narrow builder export methods in `src/mofbuilder/core/builder.py`: `get_role_runtime_snapshot()`, `get_optimization_semantic_snapshot()`, and `get_framework_input_snapshot()`, keeping compilation builder-owned and derived from existing graph role ids, registries, bundle state, resolve scaffolding, null-edge rules, provenance, and resolved-state maps.
+2. Add or extend snapshot-focused helper logic in `src/mofbuilder/core/runtime_snapshot.py` only as needed to support builder-side compilation from existing state, without introducing new ownership, changing record semantics, or widening optimizer/framework scope.
+3. Add focused tests in `tests/test_core_builder.py` and/or `tests/test_core_runtime_snapshot.py` covering snapshot export for both legacy default-role families and role-aware cases, proving the builder exports stable snapshots while existing build behavior and public APIs remain unchanged.
+
+## Validation
+- Run targeted validation for the touched snapshot export paths and tests, preferably `pytest` on the relevant builder/runtime snapshot tests; if `pytest` remains unavailable, run compile/import or direct assertion coverage and document the environment blocker honestly.
+- Verify architecture invariants hold: graph role ids remain on graph elements, builder remains the owner of interpretation and snapshot compilation, framework stays role-agnostic, optimizer path is unchanged, primitive-first order is preserved, and null-edge semantics remain distinct from zero-length real edges.
+
+## Non-goals
+- Do not modify optimizer logic, framework logic, FrameNet graph stamping, supercell behavior, linker behavior, or the build pipeline order.
+- Do not populate future Phase 3 optimizer semantic fields beyond what is already available from current builder-owned state, and do not redesign snapshot architecture created in Phase 1.
+
+## Exit Criteria
+- `MetalOrganicFrameworkBuilder` exports the three snapshot getters and they compile snapshots from existing builder-owned state only.
+- Tests demonstrate snapshot export behavior for legacy/default-role and role-aware inputs with no optimizer/framework behavior change and no ownership drift.
+
+## STATUS.md Update
+- Phase: Phase 2
+- Checkpoint: phase-2-plan-ready
+- Status: READY_FOR_EXECUTOR
+- Next step: Executor implements the active phase only
+
+`STATUS.md` was updated at [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md).
+
+
+## 2026-03-14 — executor — add phase 2 builder snapshot export getters
+
+branch:
+role-runtime-contract
+
+phase:
+Phase 2 — Builder Runtime Snapshot Export
+
+checkpoint:
+phase-2-snapshot-export-implemented
+
+summary:
+- Added builder-owned snapshot compilation helpers and the three narrow export methods on `MetalOrganicFrameworkBuilder`: `get_role_runtime_snapshot()`, `get_optimization_semantic_snapshot()`, and `get_framework_input_snapshot()`.
+- Compiled Phase 1 snapshot records directly from existing builder-owned state: graph role ids, role registries, bundle registry, resolve instructions, null-edge rules, provenance, and resolved fragment maps.
+- Added focused builder tests covering snapshot export for both legacy/default-role and role-aware runtime states without modifying optimizer behavior, framework behavior, FrameNet graph stamping, or pipeline order.
+
+files touched:
+- src/mofbuilder/core/builder.py
+- tests/test_core_builder.py
+
+invariants checked:
+- Topology graph remains the source of truth for role ids; snapshots are derived API views only.
+- Builder remains the owner of role interpretation and snapshot compilation.
+- Framework remains role-agnostic; the framework-facing snapshot is a handoff view only.
+- Primitive-first optimization order and existing build pipeline behavior were not changed.
+- Null-edge semantics remain distinct from zero-length real edges in exported policy and resolved-state records.
+
+validation:
+- `python -m compileall src/mofbuilder/core/builder.py tests/test_core_builder.py`
+- `python -m pytest tests/test_core_builder.py -k 'snapshot_export_getters or runtime_snapshot'` could not run because `pytest` is not installed in the available interpreter.
+- Direct runtime import validation could not run because the available interpreter also does not have `networkx` installed.
+
+notes:
+- Phase scope stayed within the allowed modules: `src/mofbuilder/core/builder.py`, `tests/test_core_builder.py`, `WORKLOG.md`, and `STATUS.md`.
+- No optimizer, framework, FrameNet, linker, supercell, or build-pipeline code was modified.
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T15:30:00+00:00
+
+## Active Phase
+- Phase: 2
+- Name: Builder Runtime Snapshot Export
+
+## Implemented
+- Added builder-owned snapshot compilation helpers and the public export getters in [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py#L915).
+- Covered default-role and role-aware snapshot export paths in [test_core_builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_builder.py#L1229).
+- Updated [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) and [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) for planner handoff.
+
+## Files Changed
+- `src/mofbuilder/core/builder.py`
+- `tests/test_core_builder.py`
+- `WORKLOG.md`
+- `STATUS.md`
+
+## Validation
+- `python -m compileall src/mofbuilder/core/builder.py tests/test_core_builder.py`
+- `python -m pytest tests/test_core_builder.py -k 'snapshot_export_getters or runtime_snapshot'` blocked because `pytest` is not installed
+- Direct runtime import validation blocked because `networkx` is not installed in the available interpreter
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- The current environment lacks `pytest`, so targeted test execution is still blocked by missing tooling.
+- The current environment also lacks `networkx`, so direct import-time runtime checks for the builder module could not be executed here.
+
+## STATUS.md Update
+- Phase: Phase 2
+- Checkpoint: phase-2-snapshot-export-implemented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T15:22:01+00:00
+
+## Active Phase
+- Phase: 2
+- Name: Builder Runtime Snapshot Export
+
+## Implemented
+- Added builder-owned snapshot compilation helpers and the three export getters in [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py#L915): `get_role_runtime_snapshot()`, `get_optimization_semantic_snapshot()`, and `get_framework_input_snapshot()`.
+- Compiled Phase 1 snapshot records from existing builder-owned state only: graph role ids, role registries, bundle registry, resolve instructions, null-edge rules, provenance, and resolved fragment maps.
+- Added focused export coverage for default-role and role-aware cases in [test_core_builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_builder.py#L1229).
+
+## Files Changed
+- [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py#L915)
+- [test_core_builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_builder.py#L1229)
+- [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md)
+- [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md)
+
+## Validation
+- `python -m compileall src/mofbuilder/core/builder.py tests/test_core_builder.py`
+- `python -m pytest tests/test_core_builder.py -k 'snapshot_export_getters or runtime_snapshot'` could not run because `pytest` is not installed.
+- Direct runtime import validation could not run because the available interpreter also lacks `networkx`.
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- Targeted test execution is still blocked by missing `pytest`.
+- Direct import-time runtime checks are blocked by missing `networkx` in the available interpreter.
+
+## STATUS.md Update
+- Phase: Phase 2
+- Checkpoint: phase-2-snapshot-export-implemented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance

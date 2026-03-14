@@ -31,6 +31,18 @@ from ..md.solvationbuilder import SolvationBuilder
 from ..visualization.viewer import Viewer
 from ..md.setup import OpenmmSetup
 from .framework import Framework
+from .runtime_snapshot import (
+    BundleRecord,
+    EdgeRoleRecord,
+    FrameworkInputSnapshot,
+    NodeRoleRecord,
+    NullEdgePolicyRecord,
+    OptimizationSemanticSnapshot,
+    ProvenanceRecord,
+    ResolveInstructionRecord,
+    ResolvedStateRecord,
+    RoleRuntimeSnapshot,
+)
 
 
 class MetalOrganicFrameworkBuilder:
@@ -902,6 +914,413 @@ class MetalOrganicFrameworkBuilder:
         if getattr(self.net_optimizer, "sG", None) is not None:
             self.net_optimizer.sG = optimized_graph
         self.sG = optimized_graph.copy()
+
+    def _has_graph_phase(self, graph_phase):
+        if graph_phase == "G":
+            return self.G is not None or getattr(self.frame_net, "G", None) is not None
+        if graph_phase == "sG":
+            return self.sG is not None or getattr(self.net_optimizer, "sG", None) is not None
+        if graph_phase == "superG":
+            return self.superG is not None
+        if graph_phase == "eG":
+            return self.eG is not None
+        if graph_phase == "cleaved_eG":
+            return self.cleaved_eG is not None
+        return False
+
+    def _get_snapshot_graph_phase(self, preferred_phases):
+        for graph_phase in preferred_phases:
+            if self._has_graph_phase(graph_phase):
+                return graph_phase
+        return preferred_phases[-1]
+
+    def _get_graph_for_role_lookup(self):
+        if self.G is not None:
+            return self.G
+        return getattr(self.frame_net, "G", None)
+
+    def _get_node_role_class(self, role_id):
+        role_prefix = self._get_role_prefix(role_id)
+        if role_prefix in ("V", "C"):
+            return role_prefix
+        return "V"
+
+    def _get_edge_role_class(self, role_id):
+        role_prefix = self._get_role_prefix(role_id)
+        if role_prefix == "E":
+            return role_prefix
+        return "E"
+
+    def _get_node_slot_rules(self, canonical_metadata, role_id):
+        return tuple(canonical_metadata.get("slot_rules", {}).get(self._get_role_alias(role_id), ()))
+
+    def _get_incident_edge_aliases(self, canonical_metadata, role_id):
+        return tuple(
+            canonical_metadata.get("connectivity_rules", {})
+            .get(self._get_role_alias(role_id), {})
+            .get("incident_edge_aliases", ())
+        )
+
+    def _get_edge_endpoint_pattern(self, canonical_metadata, role_id, *, instruction=None):
+        role_alias = self._get_role_alias(role_id)
+        for path_rule in canonical_metadata.get("path_rules", ()):
+            if str(path_rule.get("edge_alias")) == role_alias:
+                return tuple(path_rule.get("endpoint_pattern", ()))
+        if instruction is None:
+            return ()
+        node_role_ids = instruction.get("node_role_ids", {})
+        graph_edge = instruction.get("graph_edge", ())
+        if len(graph_edge) != 2:
+            return ()
+        return (
+            self._get_role_alias(node_role_ids.get(graph_edge[0])),
+            role_alias,
+            self._get_role_alias(node_role_ids.get(graph_edge[1])),
+        )
+
+    def _get_edge_slot_rules(self, canonical_metadata, role_id):
+        return tuple(canonical_metadata.get("slot_rules", {}).get(self._get_role_alias(role_id), ()))
+
+    def _build_null_edge_policy_records(self):
+        role_rules = (self.null_edge_rules or {}).get("roles", {})
+        default_action = (self.null_edge_rules or {}).get("policy", {}).get("default_action")
+        allowed_aliases = tuple(
+            (self.null_edge_rules or {})
+            .get("policy", {})
+            .get("allowed_null_fallback_edge_aliases", ())
+        )
+        records = {}
+        for role_id in sorted(role_rules):
+            role_rule = role_rules[role_id]
+            records[role_id] = NullEdgePolicyRecord(
+                edge_role_id=role_id,
+                edge_kind=role_rule.get("edge_kind", "real"),
+                is_null_edge=role_rule.get("edge_kind", "real") == "null",
+                null_payload_model=role_rule.get("null_payload_model"),
+                unresolved_action=default_action,
+                allows_null_fallback=bool(role_rule.get("allows_unresolved_null_fallback", False)),
+                metadata={
+                    "role_alias": role_rule.get("role_alias"),
+                    "allowed_null_fallback_edge_aliases": allowed_aliases,
+                },
+            )
+        return records
+
+    def _build_node_role_records(self, canonical_metadata):
+        records = {}
+        role_ids = set(self.node_role_specs) | set(self.node_role_registry)
+        for role_id in sorted(role_ids):
+            spec = self.node_role_specs.get(role_id, {})
+            registry_entry = self.node_role_registry.get(role_id, {})
+            records[role_id] = NodeRoleRecord(
+                role_id=role_id,
+                family_alias=self._get_role_alias(role_id),
+                role_class=self._get_node_role_class(role_id),
+                expected_connectivity=registry_entry.get(
+                    "expected_connectivity",
+                    spec.get("expected_connectivity"),
+                ),
+                topology_labels=tuple(
+                    registry_entry.get("topology_labels", spec.get("topology_labels", ()))
+                ),
+                incident_edge_aliases=self._get_incident_edge_aliases(
+                    canonical_metadata,
+                    role_id,
+                ),
+                slot_rules=self._get_node_slot_rules(canonical_metadata, role_id),
+                metadata_reference=registry_entry.get("metadata_reference", {}),
+                metadata={
+                    "fragment_source": registry_entry.get("fragment_source"),
+                    "node_metal": registry_entry.get("node_metal"),
+                    "dummy_atom_node": registry_entry.get("dummy_atom_node"),
+                    "filename": registry_entry.get("filename"),
+                    "has_node_data": registry_entry.get("node_data") is not None,
+                    "has_node_X_data": registry_entry.get("node_X_data") is not None,
+                    "has_dummy_atom_node_dict": registry_entry.get("dummy_atom_node_dict")
+                    is not None,
+                },
+            )
+        return records
+
+    def _build_edge_role_records(self, canonical_metadata, null_edge_policy_records):
+        records = {}
+        instruction_lookup = {
+            instruction["edge_role_id"]: instruction
+            for instruction in self.resolve_instructions
+        }
+        resolve_rules = canonical_metadata.get("resolve_rules", {})
+        role_ids = set(self.edge_role_specs) | set(self.edge_role_registry)
+        for role_id in sorted(role_ids):
+            spec = self.edge_role_specs.get(role_id, {})
+            registry_entry = self.edge_role_registry.get(role_id, {})
+            role_alias = self._get_role_alias(role_id)
+            role_rule = (self.null_edge_rules or {}).get("roles", {}).get(role_id, {})
+            records[role_id] = EdgeRoleRecord(
+                role_id=role_id,
+                family_alias=role_alias,
+                role_class=self._get_edge_role_class(role_id),
+                linker_connectivity=registry_entry.get(
+                    "linker_connectivity",
+                    spec.get("linker_connectivity"),
+                ),
+                topology_labels=tuple(
+                    registry_entry.get("topology_labels", spec.get("topology_labels", ()))
+                ),
+                endpoint_pattern=self._get_edge_endpoint_pattern(
+                    canonical_metadata,
+                    role_id,
+                    instruction=instruction_lookup.get(role_id),
+                ),
+                slot_rules=self._get_edge_slot_rules(canonical_metadata, role_id),
+                edge_kind=role_rule.get("edge_kind", "real"),
+                resolve_mode=resolve_rules.get(role_alias, {}).get("resolve_mode"),
+                null_edge_policy=null_edge_policy_records.get(role_id),
+                metadata_reference=registry_entry.get("metadata_reference", {}),
+                metadata={
+                    "fragment_source": registry_entry.get("fragment_source"),
+                    "linker_charge": registry_entry.get("linker_charge"),
+                    "linker_multiplicity": registry_entry.get("linker_multiplicity"),
+                    "linker_fake_edge": registry_entry.get("linker_fake_edge"),
+                    "has_linker_center_data": registry_entry.get("linker_center_data") is not None,
+                    "has_linker_outer_data": registry_entry.get("linker_outer_data") is not None,
+                    "linker_frag_length": registry_entry.get("linker_frag_length"),
+                },
+            )
+        return records
+
+    def _build_bundle_records(self):
+        graph = self._get_graph_for_role_lookup()
+        canonical_metadata = self._get_canonical_role_metadata()
+        cyclic_order_rules = canonical_metadata.get("cyclic_order_rules", {})
+        records = {}
+        for bundle_id in sorted(self.bundle_registry):
+            bundle_entry = self.bundle_registry[bundle_id]
+            center_node = bundle_entry.get("center_node")
+            owner_role_id = bundle_entry.get("resolved_owner_role_id")
+            if owner_role_id is None and graph is not None and center_node in graph.nodes:
+                owner_role_id = self._normalize_runtime_role_id(
+                    graph.nodes[center_node].get("node_role_id"),
+                    namespace="node",
+                )
+            owner_alias = self._get_role_alias(owner_role_id)
+            order_rule = cyclic_order_rules.get(owner_alias, {})
+            attachment_edge_role_ids = []
+            for edge in bundle_entry.get("edge_list", ()):
+                if graph is None or not graph.has_edge(*edge):
+                    continue
+                attachment_edge_role_ids.append(
+                    self._normalize_runtime_role_id(
+                        graph.edges[edge].get("edge_role_id"),
+                        namespace="edge",
+                    )
+                )
+            records[bundle_id] = BundleRecord(
+                bundle_id=bundle_id,
+                owner_role_id=owner_role_id,
+                attachment_edge_role_ids=tuple(attachment_edge_role_ids),
+                ordered_attachment_indices=tuple(bundle_entry.get("ordering", ())),
+                order_kind=order_rule.get("order_kind"),
+                metadata={
+                    "center_node": center_node,
+                    "ownership_committed": bundle_entry.get("ownership_committed", False),
+                    "resolution_status": bundle_entry.get("resolution_status"),
+                    "resolved_instruction_ids": tuple(
+                        bundle_entry.get("resolved_instruction_ids", ())
+                    ),
+                },
+            )
+        return records
+
+    def _build_resolve_instruction_records(self, canonical_metadata):
+        records = []
+        for instruction in self.resolve_instructions:
+            graph_edge = instruction.get("graph_edge", ())
+            source_role_id = None
+            target_role_id = None
+            if len(graph_edge) == 2:
+                source_role_id = instruction.get("node_role_ids", {}).get(graph_edge[0])
+                target_role_id = instruction.get("node_role_ids", {}).get(graph_edge[1])
+            records.append(
+                ResolveInstructionRecord(
+                    instruction_id=instruction["instruction_id"],
+                    edge_role_id=instruction["edge_role_id"],
+                    resolve_mode=instruction.get("resolve_mode"),
+                    endpoint_pattern=self._get_edge_endpoint_pattern(
+                        canonical_metadata,
+                        instruction["edge_role_id"],
+                        instruction=instruction,
+                    ),
+                    bundle_id=instruction.get("bundle_id"),
+                    source_role_id=source_role_id,
+                    target_role_id=target_role_id,
+                    metadata={
+                        "graph_edge": tuple(graph_edge),
+                        "path_type": instruction.get("path_type"),
+                        "slot_index": instruction.get("slot_index"),
+                        "bundle_owner_node": instruction.get("bundle_owner_node"),
+                        "bundle_owner_role_id": instruction.get("bundle_owner_role_id"),
+                        "edge_kind": instruction.get("edge_kind"),
+                        "is_null_edge": instruction.get("is_null_edge", False),
+                        "null_payload_model": instruction.get("null_payload_model"),
+                        "allows_unresolved_null_fallback": instruction.get(
+                            "allows_unresolved_null_fallback",
+                            False,
+                        ),
+                    },
+                )
+            )
+        return tuple(records)
+
+    def _build_provenance_records(self):
+        records = {}
+        instruction_lookup = {
+            instruction["instruction_id"]: instruction
+            for instruction in self.resolve_instructions
+        }
+        for record_id in sorted(self.provenance_map):
+            provenance_entry = self.provenance_map[record_id]
+            instruction = instruction_lookup.get(record_id, {})
+            records[record_id] = ProvenanceRecord(
+                record_id=record_id,
+                role_id=instruction.get("edge_role_id", "edge:default"),
+                source_kind="graph_edge",
+                source_ref=str(provenance_entry.get("graph_edge")),
+                metadata={
+                    "status": provenance_entry.get("status"),
+                    "bundle_id": provenance_entry.get("bundle_id"),
+                    "pending_owner_role_id": provenance_entry.get("pending_owner_role_id"),
+                    "resolved_owner_role_id": provenance_entry.get("resolved_owner_role_id"),
+                    "resolve_mode": provenance_entry.get("resolve_mode"),
+                    "transfer_committed": provenance_entry.get("transfer_committed", False),
+                    "ownership_history": tuple(
+                        provenance_entry.get("ownership_history", ())
+                    ),
+                },
+            )
+        return records
+
+    def _build_resolved_state_records(self):
+        records = {}
+        for node_name in sorted(self.resolved_node_fragments):
+            node_entry = self.resolved_node_fragments[node_name]
+            state_id = f"resolved:node:{node_name}"
+            records[state_id] = ResolvedStateRecord(
+                state_id=state_id,
+                role_id=node_entry.get("role_id", "node:default"),
+                state_kind="node_fragment",
+                is_resolved=True,
+                payload_ref=f"node:{node_name}",
+                fragment_key=node_name,
+                metadata={
+                    "resolution_stage": node_entry.get("resolution_stage"),
+                    "role_prefix": node_entry.get("role_prefix"),
+                },
+            )
+        for bundle_id in sorted(self.resolved_bundle_fragments):
+            bundle_entry = self.resolved_bundle_fragments[bundle_id]
+            state_id = f"resolved:{bundle_id}"
+            records[state_id] = ResolvedStateRecord(
+                state_id=state_id,
+                role_id=bundle_entry.get("owner_role_id", "node:default"),
+                state_kind="bundle_fragment",
+                is_resolved=True,
+                payload_ref=bundle_id,
+                fragment_key=bundle_entry.get("center_node"),
+                metadata={
+                    "resolution_stage": bundle_entry.get("resolution_stage"),
+                    "instruction_ids": tuple(bundle_entry.get("instruction_ids", ())),
+                    "ownership_committed": bundle_entry.get("ownership_committed", False),
+                },
+            )
+        for instruction_id in sorted(self.resolved_edge_fragments):
+            edge_entry = self.resolved_edge_fragments[instruction_id]
+            state_id = f"resolved:edge:{instruction_id}"
+            records[state_id] = ResolvedStateRecord(
+                state_id=state_id,
+                role_id=edge_entry.get("edge_role_id", "edge:default"),
+                state_kind="edge_fragment",
+                is_resolved=True,
+                payload_ref=instruction_id,
+                fragment_key=edge_entry.get("owner_bundle_id"),
+                metadata={
+                    "resolution_stage": edge_entry.get("resolution_stage"),
+                    "edge_kind": edge_entry.get("edge_kind"),
+                    "is_null_edge": edge_entry.get("is_null_edge", False),
+                    "ownership_status": edge_entry.get("ownership_status"),
+                    "transfer_committed": edge_entry.get("transfer_committed", False),
+                },
+            )
+        return records
+
+    def get_role_runtime_snapshot(self):
+        canonical_metadata = self._get_canonical_role_metadata()
+        null_edge_policy_records = self._build_null_edge_policy_records()
+        node_role_records = self._build_node_role_records(canonical_metadata)
+        edge_role_records = self._build_edge_role_records(
+            canonical_metadata,
+            null_edge_policy_records,
+        )
+        bundle_records = self._build_bundle_records()
+        resolve_instruction_records = self._build_resolve_instruction_records(
+            canonical_metadata
+        )
+        provenance_records = self._build_provenance_records()
+        resolved_state_records = self._build_resolved_state_records()
+        graph_phase = self._get_snapshot_graph_phase(("sG", "G"))
+
+        return RoleRuntimeSnapshot(
+            family_name=str(self.mof_family or ""),
+            graph_phase=graph_phase,
+            node_role_records=node_role_records,
+            edge_role_records=edge_role_records,
+            bundle_records=bundle_records,
+            resolve_instruction_records=resolve_instruction_records,
+            null_edge_policy_records=null_edge_policy_records,
+            provenance_records=provenance_records,
+            resolved_state_records=resolved_state_records,
+            metadata={
+                "builder_owned": True,
+                "graph_role_ids_remain_on_graph": True,
+                "role_metadata_present": bool(self.role_metadata),
+                "has_role_aware_graph": self._has_role_aware_graph(),
+            },
+        )
+
+    def get_optimization_semantic_snapshot(self):
+        runtime_snapshot = self.get_role_runtime_snapshot()
+        graph_phase = self._get_snapshot_graph_phase(("sG", "G"))
+        return OptimizationSemanticSnapshot(
+            family_name=runtime_snapshot.family_name,
+            graph_phase=graph_phase,
+            node_role_records=runtime_snapshot.node_role_records,
+            edge_role_records=runtime_snapshot.edge_role_records,
+            bundle_records=runtime_snapshot.bundle_records,
+            resolve_instruction_records=runtime_snapshot.resolve_instruction_records,
+            null_edge_policy_records=runtime_snapshot.null_edge_policy_records,
+            metadata={
+                "builder_owned": True,
+                "derived_from": "RoleRuntimeSnapshot",
+                "phase_bounded": "phase_2_export",
+            },
+        )
+
+    def get_framework_input_snapshot(self):
+        runtime_snapshot = self.get_role_runtime_snapshot()
+        graph_phase = self._get_snapshot_graph_phase(
+            ("cleaved_eG", "eG", "superG", "sG", "G")
+        )
+        return FrameworkInputSnapshot(
+            family_name=runtime_snapshot.family_name,
+            graph_phase=graph_phase,
+            bundle_records=runtime_snapshot.bundle_records,
+            provenance_records=runtime_snapshot.provenance_records,
+            resolved_state_records=runtime_snapshot.resolved_state_records,
+            metadata={
+                "builder_owned": True,
+                "framework_role_agnostic": True,
+                "derived_from": "RoleRuntimeSnapshot",
+            },
+        )
 
     def _compile_bundle_registry(self):
         self.bundle_registry = {}

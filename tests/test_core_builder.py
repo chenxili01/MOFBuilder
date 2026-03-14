@@ -9,6 +9,11 @@ import mofbuilder.core.builder as builder_module
 from mofbuilder.core.builder import MetalOrganicFrameworkBuilder
 from mofbuilder.core.moftoplibrary import MofTopLibrary
 from mofbuilder.core.net import ValidationResult
+from mofbuilder.core.runtime_snapshot import (
+    FrameworkInputSnapshot,
+    OptimizationSemanticSnapshot,
+    RoleRuntimeSnapshot,
+)
 
 
 class _DummyDefectGenerator:
@@ -1218,3 +1223,172 @@ def test_execute_post_optimization_resolve_keeps_legacy_default_path_empty():
     assert builder.resolved_edge_fragments == {}
     assert builder.resolve_merge_map == {}
     assert builder.resolve_execution_log == []
+
+
+@pytest.mark.core
+def test_snapshot_export_getters_compile_default_role_builder_state():
+    builder = MetalOrganicFrameworkBuilder(mof_family="MOF-TEST")
+    builder.node_connectivity = 6
+    builder.linker_connectivity = 2
+    builder.node_metal = "Zr"
+    builder.dummy_atom_node = False
+    builder.linker_smiles = "C1=CC=CC=C1"
+    builder.linker_charge = -2
+    builder.linker_multiplicity = 1
+    builder.G = nx.Graph()
+    builder.G.add_node("V0", node_role_id="node:default")
+    builder.G.add_node("V1", node_role_id="node:default")
+    builder.G.add_edge("V0", "V1", edge_role_id="edge:default")
+    builder.mof_top_library.role_metadata = None
+
+    builder._initialize_role_registries()
+
+    runtime_snapshot = builder.get_role_runtime_snapshot()
+    optimization_snapshot = builder.get_optimization_semantic_snapshot()
+    framework_snapshot = builder.get_framework_input_snapshot()
+
+    assert isinstance(runtime_snapshot, RoleRuntimeSnapshot)
+    assert isinstance(optimization_snapshot, OptimizationSemanticSnapshot)
+    assert isinstance(framework_snapshot, FrameworkInputSnapshot)
+    assert runtime_snapshot.family_name == "MOF-TEST"
+    assert runtime_snapshot.graph_phase == "G"
+    assert list(runtime_snapshot.node_role_records) == ["node:default"]
+    assert list(runtime_snapshot.edge_role_records) == ["edge:default"]
+    assert runtime_snapshot.node_role_records["node:default"].role_class == "V"
+    assert runtime_snapshot.edge_role_records["edge:default"].role_class == "E"
+    assert (
+        runtime_snapshot.node_role_records["node:default"].metadata_reference["source"]
+        == "legacy_default"
+    )
+    assert (
+        runtime_snapshot.edge_role_records["edge:default"].metadata["fragment_source"]
+        == {"kind": "smiles", "value": "C1=CC=CC=C1"}
+    )
+    assert runtime_snapshot.bundle_records == {}
+    assert runtime_snapshot.resolve_instruction_records == ()
+    assert runtime_snapshot.null_edge_policy_records == {}
+    assert runtime_snapshot.provenance_records == {}
+    assert runtime_snapshot.resolved_state_records == {}
+    assert optimization_snapshot.graph_phase == "G"
+    assert optimization_snapshot.bundle_records == {}
+    assert framework_snapshot.graph_phase == "G"
+    assert framework_snapshot.bundle_records == {}
+    assert framework_snapshot.provenance_records == {}
+    assert framework_snapshot.resolved_state_records == {}
+
+
+@pytest.mark.core
+def test_snapshot_export_getters_compile_role_aware_builder_runtime_state():
+    builder = MetalOrganicFrameworkBuilder(mof_family="TEST-MULTI")
+    canonical_metadata = _canonical_family_role_metadata()
+    builder.mof_top_library.role_metadata = {
+        "schema": "mof_topology_role_metadata/v1",
+        "canonical_role_metadata": canonical_metadata,
+        "node_roles": [
+            {
+                "role_id": "node:VA",
+                "expected_connectivity": 4,
+                "topology_labels": ["VA"],
+            },
+            {
+                "role_id": "node:CA",
+                "expected_connectivity": 2,
+                "topology_labels": ["CA"],
+            },
+        ],
+        "edge_roles": [
+            {
+                "role_id": "edge:EA",
+                "linker_connectivity": 4,
+                "topology_labels": ["EA"],
+            },
+            {
+                "role_id": "edge:EB",
+                "linker_connectivity": 4,
+                "topology_labels": ["EB"],
+            },
+        ],
+    }
+    builder.mof_top_library.canonical_role_metadata = canonical_metadata
+    builder.role_metadata = builder.mof_top_library.role_metadata
+    builder.node_connectivity = 4
+    builder.linker_connectivity = 4
+    builder.node_metal = "Zn"
+    builder.linker_xyzfile = "tests/database/example_linker.xyz"
+    builder.G = nx.Graph()
+    builder.G.add_node("V0", node_role_id="node:VA")
+    builder.G.add_node("V1", node_role_id="node:VA")
+    builder.G.add_node(
+        "C0",
+        node_role_id="node:CA",
+        cyclic_edge_order=[("V0", "C0"), ("V1", "C0")],
+    )
+    builder.G.add_edge(
+        "V0",
+        "C0",
+        edge_role_id="edge:EA",
+        slot_index={"V0": 0, "C0": 0},
+    )
+    builder.G.add_edge(
+        "V1",
+        "C0",
+        edge_role_id="edge:EA",
+        slot_index={"V1": 0, "C0": 1},
+    )
+    builder.G.add_edge(
+        "V0",
+        "V1",
+        edge_role_id="edge:EB",
+        slot_index={"V0": 1, "V1": 1},
+    )
+
+    builder._initialize_role_registries()
+    builder._compile_bundle_registry()
+    builder._prepare_resolve_scaffolding()
+    builder.net_optimizer = SimpleNamespace(sG=builder.G.copy())
+    builder.sG = builder.G.copy()
+    builder._execute_post_optimization_resolve()
+    builder.cleaved_eG = nx.Graph()
+
+    runtime_snapshot = builder.get_role_runtime_snapshot()
+    optimization_snapshot = builder.get_optimization_semantic_snapshot()
+    framework_snapshot = builder.get_framework_input_snapshot()
+
+    assert runtime_snapshot.graph_phase == "sG"
+    assert list(runtime_snapshot.bundle_records) == ["bundle:C0"]
+    assert runtime_snapshot.bundle_records["bundle:C0"].owner_role_id == "node:CA"
+    assert runtime_snapshot.bundle_records["bundle:C0"].order_kind == (
+        "clockwise_local_topology"
+    )
+    assert runtime_snapshot.node_role_records["node:CA"].incident_edge_aliases == (
+        "EA",
+        "EA",
+    )
+    assert runtime_snapshot.edge_role_records["edge:EA"].endpoint_pattern == (
+        "VA",
+        "EA",
+        "CA",
+    )
+    assert runtime_snapshot.edge_role_records["edge:EB"].null_edge_policy.is_null_edge is True
+    assert runtime_snapshot.resolve_instruction_records[0].metadata["path_type"] == "V-E-C"
+    assert (
+        runtime_snapshot.provenance_records["resolve:V0|C0|edge:EA"].metadata["status"]
+        == "resolved"
+    )
+    assert (
+        runtime_snapshot.resolved_state_records["resolved:bundle:C0"].state_kind
+        == "bundle_fragment"
+    )
+    assert (
+        runtime_snapshot.resolved_state_records[
+            "resolved:edge:resolve:V0|V1|edge:EB"
+        ].metadata["is_null_edge"]
+        is True
+    )
+    assert optimization_snapshot.graph_phase == "sG"
+    assert optimization_snapshot.metadata["phase_bounded"] == "phase_2_export"
+    assert not hasattr(optimization_snapshot, "provenance_records")
+    assert framework_snapshot.graph_phase == "cleaved_eG"
+    assert list(framework_snapshot.bundle_records) == ["bundle:C0"]
+    assert "resolve:V0|C0|edge:EA" in framework_snapshot.provenance_records
+    assert "resolved:bundle:C0" in framework_snapshot.resolved_state_records

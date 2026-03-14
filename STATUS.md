@@ -2,8 +2,8 @@
 
 ## Workflow Status
 
-- Phase: Phase 1
-- Checkpoint: phase-1-record-types-implemented
+- Phase: Phase 2
+- Checkpoint: phase-2-snapshot-export-implemented
 - Status: COMPLETED_PENDING_PLANNER
 - Next step: Planner reviews completion and decides whether to advance
 - Last update: 2026-03-14
@@ -18,7 +18,7 @@ Establish a clean, builder-owned snapshot API that future optimizer/rotation rec
 
 ## Current Focus
 
-Start with snapshot architecture and record types only. Do not begin optimizer rewrite yet.
+Add builder-owned snapshot export/getter methods that compile the Phase 1 snapshot records from existing builder state without changing optimizer behavior, framework behavior, FrameNet graph stamping, or the build pipeline.
 
 ## Invariants
 
