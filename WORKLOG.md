@@ -571,3 +571,176 @@ notes:
 - Next step: Planner reviews completion and decides whether to advance
 
 `STATUS.md` is updated at [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md#L1), and the execution log is appended in [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md#L442).
+
+
+## planner-run
+
+- Timestamp: 2026-03-14T15:36:19+00:00
+
+## Active Phase
+- Phase: 4
+- Name: Snapshot Validation and Compatibility Tests
+
+## Objective
+Phase 4 should harden the existing builder-owned snapshot seam with focused validation and compatibility coverage only. The executor should add consistency checks around snapshot compilation and prove that legacy/default-role and role-aware families export stable, phase-bounded snapshots without changing optimizer behavior, framework behavior, FrameNet behavior, or pipeline order.
+
+## Scope
+- `src/mofbuilder/core/builder.py`
+- `src/mofbuilder/core/runtime_snapshot.py`
+- `tests/test_core_builder.py`
+- `tests/test_core_runtime_snapshot.py`
+
+## Tasks
+1. Add builder-owned snapshot validation checks in `src/mofbuilder/core/builder.py` for the Phase 4 consistency cases only: missing role registry data, graph/snapshot consistency, bundle ordering consistency, null-edge rule consistency, and legacy/default fallback stability. Keep the checks derived from existing graph role ids and builder registries; do not introduce new ownership or new graph semantics.
+2. Extend `src/mofbuilder/core/runtime_snapshot.py` only if needed to support explicit validation-friendly snapshot fields or helper predicates that keep the contract inspectable and phase-bounded. Do not broaden snapshot semantics beyond Phase 3 content.
+3. Add focused compatibility tests in `tests/test_core_builder.py` and `tests/test_core_runtime_snapshot.py` covering:
+   - legacy/default-role families
+   - role-aware families
+   - allowed empty or partial optional data
+   - expected failures or validation errors for missing registry/consistency violations
+4. Keep all Phase 4 work isolated to validation and compatibility hardening. Stop once the checks and tests prove the existing snapshot seam is stable; do not start optimizer ingestion or new semantic export work.
+
+## Validation
+- Run targeted validation for the touched snapshot tests; prefer `pytest` on the relevant builder/runtime snapshot tests, and if the environment is still missing `pytest` or runtime dependencies, run compile/import or direct assertion checks and document the blocker honestly.
+- Verify the invariants remain intact: graph role ids stay on graph elements, builder remains the owner of interpretation and snapshot compilation, framework stays role-agnostic, optimizer behavior is unchanged, primitive-first ordering is preserved, graph grammar stays `V-E-V` / `V-E-C`, and null-edge semantics remain distinct from zero-length real edges.
+
+## Non-goals
+- Do not modify optimizer logic, optimizer call sites, framework materialization, FrameNet graph stamping, linker behavior, supercell behavior, or build pipeline order.
+- Do not add new snapshot export getters, redesign snapshot architecture, widen `OptimizationSemanticSnapshot` beyond Phase 3 semantics, or begin Phase 5 optional optimizer snapshot ingestion.
+
+## Exit Criteria
+- Snapshot compilation includes focused Phase 4 validation/consistency checks for registry presence, graph/snapshot alignment, bundle ordering, null-edge rules, and legacy/default fallback behavior.
+- Tests demonstrate compatibility for legacy/default-role and role-aware families, including allowed optional-data gaps and expected validation failures, with no ownership drift, no public API breakage, and no optimizer/framework behavior change.
+
+## STATUS.md Update
+- Phase: Phase 4
+- Checkpoint: phase-4-plan-ready
+- Status: READY_FOR_EXECUTOR
+- Next step: Executor implements the active phase only
+
+
+## 2026-03-14 — executor — harden phase 4 snapshot validation
+
+branch:
+role-runtime-contract
+
+phase:
+Phase 4 — Snapshot Validation and Compatibility Tests
+
+checkpoint:
+phase-4-validation-implemented
+
+summary:
+- Added builder-owned snapshot validation checks around runtime and optimization snapshot export for missing role registry coverage, graph/snapshot alignment, bundle ordering consistency, and null-edge policy consistency.
+- Extended snapshot-focused builder coverage with expected validation failures for inconsistent builder state and a compatibility case proving role-aware export still works with allowed empty/partial optional data.
+- Kept all Phase 4 work inside snapshot export and tests only; optimizer behavior, framework behavior, FrameNet behavior, and pipeline order were not changed.
+
+files touched:
+- src/mofbuilder/core/builder.py
+- tests/test_core_builder.py
+- WORKLOG.md
+- STATUS.md
+
+invariants checked:
+- Topology graph remains the source of truth; the new checks only validate derived snapshots against graph-stored role ids.
+- Builder remains the owner of role interpretation and snapshot compilation.
+- Framework remains role-agnostic and optimizer behavior remains unchanged.
+- Graph grammar remains limited to `V-E-V` and `V-E-C`.
+- Null-edge semantics remain distinct from zero-length real edges.
+
+validation:
+- `python -m compileall src/mofbuilder/core/builder.py tests/test_core_builder.py`
+- `git diff --check`
+- `python -m pytest tests/test_core_builder.py -k snapshot` blocked because `pytest` is not installed in the available interpreter.
+- Direct runtime assertions were also blocked because the available interpreter does not have `networkx` installed, so import-based execution of the builder test helpers could not run.
+
+notes:
+- Phase 4 validation is implemented as private builder checks invoked only from snapshot export getters, preserving existing public APIs and non-snapshot behavior.
+- Runtime snapshot validation now fails fast for missing role records, inconsistent bundle ordering, and null-edge mismatches instead of exporting silently inconsistent derived views.
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T15:50:00+00:00
+
+## Active Phase
+- Phase: 4
+- Name: Snapshot Validation and Compatibility Tests
+
+## Implemented
+- Added private snapshot validation in [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py#L1473) and wired it into the existing snapshot getters in [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py#L1710).
+- Added focused Phase 4 builder tests in [test_core_builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_builder.py#L1486) for missing registry data, semantic-graph mismatch, bundle ordering mismatch, null-edge mismatch, and allowed partial optional data.
+- Reused a local role-aware builder fixture helper in [test_core_builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_builder.py#L129) to keep the new compatibility cases narrowly scoped.
+
+## Files Changed
+- `src/mofbuilder/core/builder.py`
+- `tests/test_core_builder.py`
+- `WORKLOG.md`
+- `STATUS.md`
+
+## Validation
+- `python -m compileall src/mofbuilder/core/builder.py tests/test_core_builder.py`
+- `git diff --check`
+- `python -m pytest tests/test_core_builder.py -k snapshot` blocked because `pytest` is not installed
+- Direct assertion execution blocked because `networkx` is not installed in the available interpreter
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- Full Phase 4 runtime execution remains environment-blocked by missing `pytest` and `networkx` in the available interpreter.
+- `tests/test_core_runtime_snapshot.py` did not need changes because Phase 4 gaps were in builder-side snapshot compilation and validation coverage rather than record container behavior.
+
+## STATUS.md Update
+- Phase: Phase 4
+- Checkpoint: phase-4-validation-implemented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T17:42:05+00:00
+
+## Active Phase
+- Phase: 4
+- Name: Snapshot Validation and Compatibility Tests
+
+## Implemented
+- Added private builder-side snapshot validation for missing role registry coverage, graph/snapshot alignment, bundle ordering consistency, and null-edge policy consistency in [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py).
+- Wired those checks into the existing snapshot export getters only, without changing optimizer/framework behavior or public constructor signatures, in [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py).
+- Added focused Phase 4 compatibility/failure coverage, including allowed partial optional data, in [test_core_builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_builder.py).
+- Updated [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) and [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) for planner handoff.
+
+## Files Changed
+- `src/mofbuilder/core/builder.py`
+- `tests/test_core_builder.py`
+- `WORKLOG.md`
+- `STATUS.md`
+
+## Validation
+- `python -m compileall src/mofbuilder/core/builder.py tests/test_core_builder.py`
+- `git diff --check`
+- `python -m pytest tests/test_core_builder.py -k snapshot` could not run because `pytest` is not installed.
+- Direct runtime assertions could not run because `networkx` is not installed in the available interpreter.
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- Environment is missing `pytest` and `networkx`, so Phase 4 runtime execution is still blocked.
+- `tests/test_core_runtime_snapshot.py` did not need changes; the Phase 4 gap was builder-side export validation rather than record container behavior.
+
+## STATUS.md Update
+- Phase: Phase 4
+- Checkpoint: phase-4-validation-implemented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance

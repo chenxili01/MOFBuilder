@@ -1470,6 +1470,238 @@ class MetalOrganicFrameworkBuilder:
             )
         return records
 
+    def _fail_snapshot_validation(self, detail):
+        raise ValueError(f"Snapshot validation failed: {detail}")
+
+    def _validate_role_runtime_snapshot(
+        self,
+        graph,
+        node_role_records,
+        edge_role_records,
+        bundle_records,
+        resolve_instruction_records,
+        null_edge_policy_records,
+        provenance_records,
+        resolved_state_records,
+    ):
+        node_role_ids = set(node_role_records)
+        edge_role_ids = set(edge_role_records)
+
+        if graph is not None:
+            missing_node_roles = sorted(
+                {
+                    self._normalize_runtime_role_id(
+                        node_data.get("node_role_id"),
+                        namespace="node",
+                    )
+                    for _, node_data in graph.nodes(data=True)
+                }
+                - node_role_ids
+            )
+            if missing_node_roles:
+                self._fail_snapshot_validation(
+                    f"missing node role records for graph role ids {missing_node_roles}"
+                )
+
+            missing_edge_roles = sorted(
+                {
+                    self._normalize_runtime_role_id(
+                        graph.edges[edge].get("edge_role_id"),
+                        namespace="edge",
+                    )
+                    for edge in graph.edges()
+                }
+                - edge_role_ids
+            )
+            if missing_edge_roles:
+                self._fail_snapshot_validation(
+                    f"missing edge role records for graph role ids {missing_edge_roles}"
+                )
+
+        for bundle_id, bundle_record in bundle_records.items():
+            if bundle_record.owner_role_id not in node_role_ids:
+                self._fail_snapshot_validation(
+                    f"bundle {bundle_id} references missing owner role {bundle_record.owner_role_id}"
+                )
+            attachment_count = len(bundle_record.attachment_edge_role_ids)
+            ordering = tuple(bundle_record.ordered_attachment_indices)
+            if ordering:
+                if len(ordering) != attachment_count:
+                    self._fail_snapshot_validation(
+                        f"bundle {bundle_id} ordering length does not match attachment edge count"
+                    )
+                if tuple(sorted(ordering)) != tuple(range(attachment_count)):
+                    self._fail_snapshot_validation(
+                        f"bundle {bundle_id} ordering is not a canonical permutation"
+                    )
+            for edge_role_id in bundle_record.attachment_edge_role_ids:
+                if edge_role_id not in edge_role_ids:
+                    self._fail_snapshot_validation(
+                        f"bundle {bundle_id} references missing edge role {edge_role_id}"
+                    )
+
+        for instruction in resolve_instruction_records:
+            if instruction.edge_role_id not in edge_role_ids:
+                self._fail_snapshot_validation(
+                    f"resolve instruction {instruction.instruction_id} references missing edge role {instruction.edge_role_id}"
+                )
+
+            instruction_metadata = dict(instruction.metadata)
+            is_null_edge = bool(instruction_metadata.get("is_null_edge", False))
+            edge_kind = instruction_metadata.get("edge_kind")
+            if is_null_edge or edge_kind == "null":
+                policy_record = null_edge_policy_records.get(instruction.edge_role_id)
+                if policy_record is None or not policy_record.is_null_edge:
+                    self._fail_snapshot_validation(
+                        f"resolve instruction {instruction.instruction_id} marks {instruction.edge_role_id} as null without a matching null-edge policy"
+                    )
+                null_payload_model = instruction_metadata.get("null_payload_model")
+                if (
+                    null_payload_model is not None
+                    and policy_record.null_payload_model is not None
+                    and null_payload_model != policy_record.null_payload_model
+                ):
+                    self._fail_snapshot_validation(
+                        f"resolve instruction {instruction.instruction_id} null payload model disagrees with policy for {instruction.edge_role_id}"
+                    )
+
+        for role_id, policy_record in null_edge_policy_records.items():
+            edge_record = edge_role_records.get(role_id)
+            if edge_record is None:
+                self._fail_snapshot_validation(
+                    f"null-edge policy references missing edge role {role_id}"
+                )
+            if edge_record.null_edge_policy != policy_record:
+                self._fail_snapshot_validation(
+                    f"edge role {role_id} null-edge policy record is out of sync"
+                )
+            if edge_record.edge_kind != policy_record.edge_kind:
+                self._fail_snapshot_validation(
+                    f"edge role {role_id} edge kind disagrees with null-edge policy"
+                )
+            if policy_record.is_null_edge != (policy_record.edge_kind == "null"):
+                self._fail_snapshot_validation(
+                    f"null-edge policy for {role_id} is internally inconsistent"
+                )
+
+        for record_id, record in provenance_records.items():
+            if record.role_id not in edge_role_ids:
+                self._fail_snapshot_validation(
+                    f"provenance record {record_id} references missing edge role {record.role_id}"
+                )
+
+        for state_id, record in resolved_state_records.items():
+            expected_role_ids = node_role_ids
+            if record.state_kind == "edge_fragment":
+                expected_role_ids = edge_role_ids
+            if record.role_id not in expected_role_ids:
+                self._fail_snapshot_validation(
+                    f"resolved state {state_id} references missing role {record.role_id}"
+                )
+
+    def _validate_optimization_semantic_snapshot(
+        self,
+        graph,
+        node_role_records,
+        edge_role_records,
+        bundle_records,
+        graph_node_records,
+        graph_edge_records,
+        null_edge_policy_records,
+    ):
+        if graph is None:
+            if graph_node_records or graph_edge_records:
+                self._fail_snapshot_validation(
+                    "optimization snapshot exported graph records without an active semantic graph"
+                )
+            return
+
+        expected_node_ids = {str(node_name) for node_name in graph.nodes()}
+        snapshot_node_ids = set(graph_node_records)
+        if snapshot_node_ids != expected_node_ids:
+            self._fail_snapshot_validation(
+                "optimization snapshot graph nodes do not match the active semantic graph"
+            )
+
+        expected_edge_ids = {
+            self._get_graph_edge_id(tuple(str(node_name) for node_name in edge))
+            for edge in graph.edges()
+        }
+        snapshot_edge_ids = set(graph_edge_records)
+        if snapshot_edge_ids != expected_edge_ids:
+            self._fail_snapshot_validation(
+                "optimization snapshot graph edges do not match the active semantic graph"
+            )
+
+        for node_id, record in graph_node_records.items():
+            if node_id not in graph.nodes:
+                self._fail_snapshot_validation(
+                    f"optimization graph node record {node_id} does not exist on the active graph"
+                )
+            expected_role_id = self._normalize_runtime_role_id(
+                graph.nodes[node_id].get("node_role_id"),
+                namespace="node",
+            )
+            if record.role_id != expected_role_id:
+                self._fail_snapshot_validation(
+                    f"optimization graph node record {node_id} has role {record.role_id}, expected {expected_role_id}"
+                )
+            if record.role_id not in node_role_records:
+                self._fail_snapshot_validation(
+                    f"optimization graph node record {node_id} references missing role {record.role_id}"
+                )
+            if record.bundle_id is not None and record.bundle_id not in bundle_records:
+                self._fail_snapshot_validation(
+                    f"optimization graph node record {node_id} references missing bundle {record.bundle_id}"
+                )
+            missing_incident_edges = sorted(
+                set(record.incident_edge_ids) - snapshot_edge_ids
+            )
+            if missing_incident_edges:
+                self._fail_snapshot_validation(
+                    f"optimization graph node record {node_id} references missing incident edges {missing_incident_edges}"
+                )
+
+        for edge in graph.edges():
+            graph_edge = tuple(str(node_name) for node_name in edge)
+            edge_id = self._get_graph_edge_id(graph_edge)
+            record = graph_edge_records[edge_id]
+            expected_role_id = self._normalize_runtime_role_id(
+                graph.edges[edge].get("edge_role_id"),
+                namespace="edge",
+            )
+            if record.edge_role_id != expected_role_id:
+                self._fail_snapshot_validation(
+                    f"optimization graph edge record {edge_id} has role {record.edge_role_id}, expected {expected_role_id}"
+                )
+            if record.edge_role_id not in edge_role_records:
+                self._fail_snapshot_validation(
+                    f"optimization graph edge record {edge_id} references missing role {record.edge_role_id}"
+                )
+            if tuple(record.graph_edge) != graph_edge:
+                self._fail_snapshot_validation(
+                    f"optimization graph edge record {edge_id} endpoint ids do not match the active graph"
+                )
+            if record.bundle_id is not None and record.bundle_id not in bundle_records:
+                self._fail_snapshot_validation(
+                    f"optimization graph edge record {edge_id} references missing bundle {record.bundle_id}"
+                )
+
+            policy_record = null_edge_policy_records.get(record.edge_role_id)
+            if record.is_null_edge:
+                if policy_record is None or not policy_record.is_null_edge:
+                    self._fail_snapshot_validation(
+                        f"optimization graph edge record {edge_id} is null without a matching null-edge policy"
+                    )
+                if (
+                    record.null_payload_model is not None
+                    and policy_record.null_payload_model is not None
+                    and record.null_payload_model != policy_record.null_payload_model
+                ):
+                    self._fail_snapshot_validation(
+                        f"optimization graph edge record {edge_id} null payload model disagrees with policy"
+                    )
+
     def get_role_runtime_snapshot(self):
         canonical_metadata = self._get_canonical_role_metadata()
         null_edge_policy_records = self._build_null_edge_policy_records()
@@ -1485,6 +1717,18 @@ class MetalOrganicFrameworkBuilder:
         provenance_records = self._build_provenance_records()
         resolved_state_records = self._build_resolved_state_records()
         graph_phase = self._get_snapshot_graph_phase(("sG", "G"))
+        graph = self._get_graph_for_role_lookup()
+
+        self._validate_role_runtime_snapshot(
+            graph,
+            node_role_records,
+            edge_role_records,
+            bundle_records,
+            resolve_instruction_records,
+            null_edge_policy_records,
+            provenance_records,
+            resolved_state_records,
+        )
 
         return RoleRuntimeSnapshot(
             family_name=str(self.mof_family or ""),
@@ -1515,6 +1759,16 @@ class MetalOrganicFrameworkBuilder:
         graph_edge_records = self._build_optimization_graph_edge_records(
             canonical_metadata,
             runtime_snapshot.edge_role_records,
+        )
+        semantic_graph = self._get_semantic_graph()
+        self._validate_optimization_semantic_snapshot(
+            semantic_graph,
+            runtime_snapshot.node_role_records,
+            runtime_snapshot.edge_role_records,
+            runtime_snapshot.bundle_records,
+            graph_node_records,
+            graph_edge_records,
+            runtime_snapshot.null_edge_policy_records,
         )
         return OptimizationSemanticSnapshot(
             family_name=runtime_snapshot.family_name,
