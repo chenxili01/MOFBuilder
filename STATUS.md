@@ -3,9 +3,9 @@
 ## Workflow Status
 
 - Phase: Phase 7
-- Checkpoint: phase-7-executor-complete
+- Checkpoint: workflow-complete
 - Status: COMPLETED
-- Next step: planner
+- Next step: done
 - Last update: 2026-03-15
 
 ## Branch
