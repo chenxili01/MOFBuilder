@@ -1286,3 +1286,187 @@ notes:
 - Checkpoint: phase-7-executor-implemented
 - Status: COMPLETED_PENDING_PLANNER
 - Next step: Planner reviews completion and decides whether to advance
+
+
+## planner-run
+
+- Timestamp: 2026-03-14T21:07:11+00:00
+
+## Active Phase
+- Phase: 8
+- Name: Expanded Coverage, Debug Surfaces, and Handoff
+
+## Objective
+Broaden the guarded role-aware local placement path beyond the single representative prototype without changing ownership boundaries or default behavior, while adding optimizer-owned debug surfaces that make node-local contract selection, legal correspondence choice, SVD or ambiguity scoring, and refinement outcomes inspectable for the guarded path only.
+
+## Scope
+- `src/mofbuilder/core/optimizer.py`
+- `src/mofbuilder/core/optimizer_contract.py`
+- `src/mofbuilder/core/builder.py` only if minimal debug or guard plumbing is required
+- `tests/test_core_optimizer.py`
+- `tests/test_core_builder.py`
+- `WORKLOG.md`
+- `STATUS.md`
+
+## Tasks
+1. Expand the guarded `use_role_aware_local_placement` path from the current representative `V`-class prototype to a small additional set of already-supported guarded node-local cases, reusing the existing contract, legality, SVD, ambiguity, null-edge, and refinement helpers rather than redesigning the optimizer flow.
+2. Add optimizer-owned debug records for the guarded path that capture, per attempted node-local placement, the compiled contract identity, legal correspondence candidate count, selected assignment, candidate or refinement scores, fallback reason when the guarded path declines a case, and enough metadata to distinguish null-edge or alignment-only behavior from normal chemistry.
+3. Extend compatibility tests to cover: guarded success on more than one supported case, explicit fallback when the guard is off, explicit fallback when no snapshot is provided, and guarded-path debug record contents for both selected and fallback outcomes.
+4. Update workflow markdown honestly with the Phase 8 execution summary, remaining unsupported coverage, validation blockers, and any unresolved handoff risks, without claiming broader rollout than the code actually supports.
+
+## Validation
+- `python -m py_compile src/mofbuilder/core/optimizer.py src/mofbuilder/core/optimizer_contract.py src/mofbuilder/core/builder.py tests/test_core_optimizer.py tests/test_core_builder.py`
+- `python -m pytest tests/test_core_optimizer.py tests/test_core_builder.py`
+- Verify the guarded path still consumes only snapshot-derived optimizer inputs and existing helper surfaces, with legality still decided before geometry.
+- Verify the legacy optimizer path remains the default when the guard is off, no snapshot is supplied, or a case is still outside guarded coverage.
+- Verify debug surfaces are additive only and do not alter placement decisions.
+
+## Non-goals
+- Framework, `FrameNet`, graph grammar, supercell behavior, or snapshot ownership/schema changes.
+- Unguarded rollout, legacy-path removal, or broad optimizer pipeline redesign.
+- Moving role interpretation, canonical ordering, bundle ownership, or legality decisions out of builder-owned semantic surfaces.
+- New semantics beyond the existing `V-E-V` and `V-E-C` checkpoint model.
+
+## Exit Criteria
+- Guarded role-aware placement covers more than the initial single representative case while remaining explicitly opt-in.
+- Optimizer-owned debug records exist for guarded selection, scoring, and fallback outcomes.
+- Compatibility tests cover both expanded guarded behavior and unchanged legacy fallback behavior.
+- Workflow docs record the actual supported coverage and remaining gaps honestly.
+- `STATUS.md` is set for executor handoff and Phase 8 scope remains bounded.
+
+## STATUS.md Update
+- Phase: Phase 8
+- Checkpoint: phase-8-plan-ready
+- Status: READY_FOR_EXECUTOR
+- Next step: Executor implements the active phase only
+
+`STATUS.md` was updated at [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md).
+
+
+## 2026-03-14 — executor — phase 8 guarded coverage and debug surfaces
+
+branch:
+optimizer-reconstruction
+
+phase:
+Phase 8 — Expanded Coverage, Debug Surfaces, and Handoff
+
+checkpoint:
+phase-8-executor-implemented
+
+summary:
+- Expanded the guarded role-aware local-placement seeding path from the Phase 7 `V`-only prototype to a small additional already-supported `C`-class case without changing the default legacy optimizer flow.
+- Added optimizer-owned guarded-path debug records that capture selected assignments, candidate counts and scores, refinement objective values, null-edge and alignment-only counts, and fallback reasons when guarded placement is declined.
+- Extended optimizer tests to cover multi-case guarded success, explicit guard-disabled and missing-snapshot fallback debug behavior, and selected versus fallback debug contents for a null-edge-aware guarded case.
+
+files touched:
+- src/mofbuilder/core/optimizer.py
+- tests/test_core_optimizer.py
+- WORKLOG.md
+- STATUS.md
+
+invariants checked:
+- Builder remains the owner of role interpretation and snapshot compilation.
+- Optimizer consumes snapshot-derived semantic records and existing optimizer-owned helpers only.
+- Legacy optimizer behavior remains opt-in guarded and unchanged by default.
+- Framework behavior, FrameNet ownership, graph grammar, primitive-first ordering, and snapshot ownership/schema were not modified.
+- Null-edge and alignment-only semantics remain explicit and semantics still determine legality before geometry.
+
+validation:
+- `python -m py_compile src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `git diff --check -- src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `python -m pytest tests/test_core_optimizer.py -k "role_aware_initial_rotations"` could not run because `pytest` is not installed in `/Users/chenxili/.venv/bin/python`.
+- Guarded-path smoke imports could not run in the available local interpreters because no single interpreter in this checkout currently has the required runtime dependencies together (`numpy`, `networkx`, and `pytest`).
+
+notes:
+- Guarded coverage is still intentionally narrow: the seeding path now accepts additional already-supported `C`-class node-local cases, but unsupported role classes and semantic compilation failures still fall back explicitly with debug records instead of widening behavior silently.
+- The workflow references `SNAPSHOT_API_HANDOFF.md`, `OPTIMIZER_DISCUSSION_MEMORY.md`, and `OPTIMIZER_TODO_ROADMAP.md`, but those files are still absent from this checkout; implementation remained anchored to the in-repo checkpoints, architecture docs, and current snapshot types.
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T21:30:00+00:00
+
+## Active Phase
+- Phase: 8
+- Name: Expanded Coverage, Debug Surfaces, and Handoff
+
+## Implemented
+- Expanded guarded role-aware local placement seeding in [src/mofbuilder/core/optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py) from representative `V`-class nodes to include additional already-supported `C`-class cases while keeping the guard opt-in.
+- Added additive optimizer-owned guarded-path debug records in [src/mofbuilder/core/optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py) for selected and fallback outcomes, including candidate counts, selected assignments, candidate scores, refinement values, null-edge and alignment-only counts, and fallback reasons.
+- Extended guarded-path compatibility coverage in [tests/test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py) for multi-case guarded success, explicit guard-disabled and missing-snapshot fallback, and detailed debug contents for selected and fallback outcomes.
+
+## Files Changed
+- [src/mofbuilder/core/optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py)
+- [tests/test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py)
+- [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md)
+- [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md)
+
+## Validation
+- `python -m py_compile src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `git diff --check -- src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `python -m pytest tests/test_core_optimizer.py -k "role_aware_initial_rotations"` could not run because `pytest` is not installed in `/Users/chenxili/.venv/bin/python`.
+- Direct guarded-path smoke imports could not run because no available local interpreter currently provides the required dependency set together (`numpy`, `networkx`, and `pytest`).
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- Full test execution is still pending in an environment with the optimizer test dependencies installed together.
+- Guarded coverage remains intentionally limited to cases already supported by the existing optimizer-owned helper stack; broader rollout should remain planner-directed.
+- `SNAPSHOT_API_HANDOFF.md`, `OPTIMIZER_DISCUSSION_MEMORY.md`, and `OPTIMIZER_TODO_ROADMAP.md` are not present in this checkout.
+
+## STATUS.md Update
+- Phase: Phase 8
+- Checkpoint: phase-8-executor-implemented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T21:15:02+00:00
+
+## Active Phase
+- Phase: 8
+- Name: Expanded Coverage, Debug Surfaces, and Handoff
+
+## Implemented
+- Expanded guarded role-aware local placement seeding in [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py) from the Phase 7 `V`-only prototype to include additional already-supported `C`-class cases while keeping the legacy path opt-in and unchanged by default.
+- Added additive optimizer-owned guarded-path debug records in [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py) for selected and fallback outcomes, including contract identity, candidate counts, selected assignments, candidate scores, refinement values, null-edge/alignment-only counts, and fallback reasons.
+- Extended guarded-path coverage in [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py) for multi-case guarded success, explicit guard-disabled and missing-snapshot fallback, and detailed debug content checks.
+- Updated [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) and [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) for executor handoff.
+
+## Files Changed
+- `src/mofbuilder/core/optimizer.py`
+- `tests/test_core_optimizer.py`
+- `WORKLOG.md`
+- `STATUS.md`
+
+## Validation
+- `python -m py_compile src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `git diff --check -- src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py STATUS.md WORKLOG.md`
+- `python -m pytest tests/test_core_optimizer.py -k "role_aware_initial_rotations"` could not run because `pytest` is not installed in `/Users/chenxili/.venv/bin/python`.
+- Direct guarded-path smoke imports could not run because no available local interpreter has the required dependency set together (`numpy`, `networkx`, and `pytest`).
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- Full test execution is still pending in an environment with optimizer test dependencies installed together.
+- Guarded coverage remains intentionally narrow; broader rollout should remain planner-directed.
+- `SNAPSHOT_API_HANDOFF.md`, `OPTIMIZER_DISCUSSION_MEMORY.md`, and `OPTIMIZER_TODO_ROADMAP.md` are not present in this checkout.
+
+## STATUS.md Update
+- Phase: Phase 8
+- Checkpoint: phase-8-executor-implemented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance

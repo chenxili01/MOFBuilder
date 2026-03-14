@@ -2,8 +2,8 @@
 
 ## Workflow Status
 
-- Phase: Phase 7
-- Checkpoint: phase-7-executor-implemented
+- Phase: Phase 8
+- Checkpoint: phase-8-executor-implemented
 - Status: COMPLETED_PENDING_PLANNER
 - Next step: Planner reviews completion and decides whether to advance
 - Last update: 2026-03-14
@@ -18,7 +18,7 @@ Reconstruct the optimizer / rotation logic so local placement is driven by the c
 
 ## Current Focus
 
-Phase 7 executor work is complete and pending planner review. The builder and optimizer now expose an explicit `use_role_aware_local_placement` guard, and the guarded path seeds the existing optimizer from the optimizer-owned local refinement helper for one representative `V`-class case while preserving the legacy path as the default when the guard is off or no snapshot is provided. Scope remained limited to optimizer/builder guarded wiring, tests, and workflow status updates; framework behavior, FrameNet, snapshot ownership/schema, graph grammar, primitive-first ordering, and unguarded legacy-path replacement were not modified.
+Phase 8 executor work is complete and pending planner review. The guarded role-aware path now covers the prior representative `V`-class case plus a small additional already-supported `C`-class case, with optimizer-owned debug records for selected and fallback guarded outcomes. Validation is currently limited by the local environment: compile and diff checks passed, but full guarded-path tests still require an interpreter with the runtime dependencies installed together.
 
 ## Invariants
 

@@ -86,6 +86,7 @@ class NetOptimizer:
         self.semantic_snapshot = semantic_snapshot
         self.use_role_aware_local_placement = False
         self.role_aware_local_placement_records = {}
+        self.role_aware_local_placement_debug_records = {}
         #self.constant_length = 1.54  #default C-C single bond length
         self.linker_frag_length = None
 
@@ -391,31 +392,224 @@ class NetOptimizer:
         snapshot = semantic_snapshot or self.semantic_snapshot
         if not self.use_role_aware_local_placement or snapshot is None:
             self.role_aware_local_placement_records = {}
+            fallback_reason = (
+                "guard_disabled"
+                if not self.use_role_aware_local_placement
+                else "missing_semantic_snapshot"
+            )
+            self.role_aware_local_placement_debug_records = (
+                self._build_guarded_fallback_debug_records(
+                    pname_set_dict,
+                    fallback_reason=fallback_reason,
+                )
+            )
             return {}
 
         initial_rotations = {}
         placement_records = {}
+        debug_records = {}
         for group_name, group_data in pname_set_dict.items():
             if not group_data["ind_ofsortednodes"]:
                 continue
             node_id = self.sorted_nodes[group_data["ind_ofsortednodes"][0]]
             node_record = snapshot.graph_node_records.get(node_id)
-            if node_record is None or node_record.role_class != "V":
+            if node_record is None:
+                debug_records[node_id] = self._build_guarded_debug_record(
+                    group_name=group_name,
+                    node_id=node_id,
+                    status="fallback",
+                    fallback_reason="missing_node_semantic_record",
+                )
+                continue
+            if node_record.role_class not in {"V", "C"}:
+                debug_records[node_id] = self._build_guarded_debug_record(
+                    group_name=group_name,
+                    node_id=node_id,
+                    node_record=node_record,
+                    status="fallback",
+                    fallback_reason="unsupported_role_class",
+                )
                 continue
             try:
-                refinement = self.compile_local_constrained_refinement(
+                contract = self.compile_node_placement_contract(
                     node_id,
                     semantic_snapshot=snapshot,
                 )
-            except (KeyError, ValueError):
+                correspondences = self.compile_legal_node_correspondences(
+                    node_id,
+                    semantic_snapshot=snapshot,
+                    node_contract=contract,
+                )
+                if not correspondences:
+                    debug_records[node_id] = self._build_guarded_debug_record(
+                        group_name=group_name,
+                        node_id=node_id,
+                        node_record=node_record,
+                        node_contract=contract,
+                        status="fallback",
+                        fallback_reason="no_legal_correspondence",
+                    )
+                    continue
+                ambiguity_resolution = None
+                selected_correspondence = None
+                selected_initialization = None
+                if len(correspondences) == 1:
+                    selected_correspondence = correspondences[0]
+                    selected_initialization = self.compile_local_rigid_initialization(
+                        node_id,
+                        semantic_snapshot=snapshot,
+                        node_contract=contract,
+                        correspondence=selected_correspondence,
+                    )
+                else:
+                    ambiguity_resolution = self.compile_discrete_ambiguity_resolution(
+                        node_id,
+                        semantic_snapshot=snapshot,
+                        node_contract=contract,
+                        correspondences=correspondences,
+                    )
+                    selected_correspondence = ambiguity_resolution.selected_correspondence
+                    selected_initialization = ambiguity_resolution.selected_initialization
+                refinement = self.compile_local_constrained_refinement(
+                    node_id,
+                    semantic_snapshot=snapshot,
+                    node_contract=contract,
+                    correspondence=selected_correspondence,
+                    rigid_initialization=selected_initialization,
+                    ambiguity_resolution=ambiguity_resolution,
+                )
+            except (KeyError, ValueError) as exc:
+                debug_records[node_id] = self._build_guarded_debug_record(
+                    group_name=group_name,
+                    node_id=node_id,
+                    node_record=node_record,
+                    status="fallback",
+                    fallback_reason=type(exc).__name__,
+                    error_message=str(exc),
+                )
                 continue
             placement_records[node_id] = refinement
             initial_rotations[group_name] = np.asarray(
                 refinement.rotation_matrix,
                 dtype=float,
             )
+            debug_records[node_id] = self._build_guarded_debug_record(
+                group_name=group_name,
+                node_id=node_id,
+                node_record=node_record,
+                node_contract=contract,
+                correspondences=correspondences,
+                refinement=refinement,
+                ambiguity_resolution=ambiguity_resolution,
+                status="selected",
+            )
         self.role_aware_local_placement_records = placement_records
+        self.role_aware_local_placement_debug_records = debug_records
         return initial_rotations
+
+    def _build_guarded_fallback_debug_records(self,
+                                              pname_set_dict,
+                                              *,
+                                              fallback_reason):
+        debug_records = {}
+        for group_name, group_data in pname_set_dict.items():
+            if not group_data["ind_ofsortednodes"]:
+                continue
+            node_id = self.sorted_nodes[group_data["ind_ofsortednodes"][0]]
+            debug_records[node_id] = self._build_guarded_debug_record(
+                group_name=group_name,
+                node_id=node_id,
+                status="fallback",
+                fallback_reason=fallback_reason,
+            )
+        return debug_records
+
+    def _build_guarded_debug_record(
+        self,
+        *,
+        group_name,
+        node_id,
+        status,
+        node_record=None,
+        node_contract=None,
+        correspondences=None,
+        refinement=None,
+        ambiguity_resolution=None,
+        fallback_reason=None,
+        error_message=None,
+    ):
+        selected_assignment = {}
+        candidate_scores = ()
+        selected_candidate_score = None
+        if refinement is not None:
+            selected_assignment = dict(
+                refinement.correspondence.edge_to_slot_index.items()
+            )
+        if ambiguity_resolution is not None:
+            candidate_scores = tuple(
+                float(candidate.score)
+                for candidate in ambiguity_resolution.candidates
+            )
+            selected_candidate_score = float(
+                ambiguity_resolution.selected_candidate.score
+            )
+        elif refinement is not None:
+            candidate_scores = (float(refinement.rigid_initialization.rmsd),)
+            selected_candidate_score = candidate_scores[0]
+
+        null_edge_count = 0
+        alignment_only_count = 0
+        resolve_mode_hints = ()
+        local_slot_types = ()
+        incident_edge_ids = ()
+        if node_contract is not None:
+            null_edge_count = int(sum(node_contract.null_edge_flags.values()))
+            alignment_only_count = sum(
+                1
+                for requirement in node_contract.incident_requirements
+                if requirement.resolve_mode == "alignment_only"
+            )
+            resolve_mode_hints = tuple(node_contract.resolve_mode_hints)
+            local_slot_types = tuple(node_contract.local_slot_types)
+            incident_edge_ids = tuple(node_contract.incident_edge_ids)
+
+        return {
+            "group_name": group_name,
+            "node_id": node_id,
+            "node_role_id": getattr(node_record, "role_id", None),
+            "node_role_class": getattr(node_record, "role_class", None),
+            "status": status,
+            "fallback_reason": fallback_reason,
+            "error_message": error_message,
+            "candidate_count": len(correspondences or ()),
+            "selected_assignment": selected_assignment,
+            "candidate_scores": candidate_scores,
+            "selected_candidate_score": selected_candidate_score,
+            "refinement_objective_value": (
+                float(refinement.objective_value)
+                if refinement is not None
+                else None
+            ),
+            "refinement_initial_objective_value": (
+                float(refinement.initial_objective_value)
+                if refinement is not None
+                else None
+            ),
+            "orientation_only_pair_count": (
+                refinement.rigid_initialization.metadata.get(
+                    "orientation_only_pair_count",
+                    0,
+                )
+                if refinement is not None
+                else 0
+            ),
+            "null_edge_count": null_edge_count,
+            "alignment_only_count": alignment_only_count,
+            "resolve_mode_hints": resolve_mode_hints,
+            "local_slot_types": local_slot_types,
+            "incident_edge_ids": incident_edge_ids,
+            "used_ambiguity_resolution": ambiguity_resolution is not None,
+        }
 
     def place_edge_in_net(self):
         """

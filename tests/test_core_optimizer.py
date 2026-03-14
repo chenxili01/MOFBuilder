@@ -188,6 +188,360 @@ def test_compile_role_aware_initial_rotations_requires_explicit_opt_in(monkeypat
     assert "V0" in optimizer.role_aware_local_placement_records
 
 
+def test_compile_role_aware_initial_rotations_supports_v_and_c_guarded_cases(
+    monkeypatch,
+):
+    semantic_snapshot = OptimizationSemanticSnapshot(
+        family_name="ROLE-AWARE",
+        graph_phase="sG",
+        graph_node_records={
+            "V0": GraphNodeSemanticRecord(
+                node_id="V0",
+                role_id="node:VA",
+                role_class="V",
+            ),
+            "C0": GraphNodeSemanticRecord(
+                node_id="C0",
+                role_id="node:CA",
+                role_class="C",
+            ),
+        },
+    )
+    optimizer = opt.NetOptimizer(semantic_snapshot=semantic_snapshot)
+    optimizer.sorted_nodes = ["V0", "C0"]
+    optimizer.use_role_aware_local_placement = True
+
+    def fake_contract(node_id, semantic_snapshot=None):
+        return NodePlacementContract(
+            node_id=node_id,
+            node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+            node_role_class=semantic_snapshot.graph_node_records[node_id].role_class,
+            local_slot_types=("XA", "XB"),
+            incident_edge_ids=(f"{node_id}|E0", f"{node_id}|E1"),
+            resolve_mode_hints=("ownership_transfer",),
+            null_edge_flags={f"{node_id}|E0": False, f"{node_id}|E1": False},
+        )
+
+    def fake_correspondences(_node_id, **_kwargs):
+        return (
+            LegalNodeCorrespondence(
+                node_id="selected",
+                node_role_id="role",
+                edge_to_slot_index={"edge:0": 0, "edge:1": 1},
+            ),
+        )
+
+    def fake_rigid(node_id, **_kwargs):
+        return NodeLocalRigidInitialization(
+            node_id=node_id,
+            node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+            correspondence=LegalNodeCorrespondence(
+                node_id=node_id,
+                node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+                edge_to_slot_index={"edge:0": 0, "edge:1": 1},
+            ),
+            anchor_pairs=(),
+            rotation_matrix=((1.0, 0.0, 0.0),
+                             (0.0, 1.0, 0.0),
+                             (0.0, 0.0, 1.0)),
+            translation_vector=(0.0, 0.0, 0.0),
+            rmsd=0.0,
+            source_anchor_representation="anchor_vector",
+            target_anchor_representation="target_point",
+            metadata={"orientation_only_pair_count": 0},
+        )
+
+    def fake_refinement(node_id, semantic_snapshot=None, rigid_initialization=None, **_kwargs):
+        return NodeLocalConstrainedRefinement(
+            node_id=node_id,
+            node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+            correspondence=rigid_initialization.correspondence,
+            rigid_initialization=rigid_initialization,
+            rotation_matrix=((1.0, 0.0, 0.0),
+                             (0.0, 1.0, 0.0),
+                             (0.0, 0.0, 1.0)),
+            translation_vector=(0.0, 0.0, 0.0),
+            objective_value=0.0,
+            initial_objective_value=0.0,
+        )
+
+    monkeypatch.setattr(optimizer, "compile_node_placement_contract", fake_contract)
+    monkeypatch.setattr(
+        optimizer,
+        "compile_legal_node_correspondences",
+        fake_correspondences,
+    )
+    monkeypatch.setattr(optimizer, "compile_local_rigid_initialization", fake_rigid)
+    monkeypatch.setattr(
+        optimizer,
+        "compile_local_constrained_refinement",
+        fake_refinement,
+    )
+
+    rotations = optimizer._compile_role_aware_initial_rotations(
+        {
+            "group:V": {"ind_ofsortednodes": [0]},
+            "group:C": {"ind_ofsortednodes": [1]},
+        },
+        semantic_snapshot=semantic_snapshot,
+    )
+
+    assert set(rotations) == {"group:V", "group:C"}
+    assert np.allclose(rotations["group:V"], np.eye(3))
+    assert np.allclose(rotations["group:C"], np.eye(3))
+    assert set(optimizer.role_aware_local_placement_records) == {"V0", "C0"}
+    assert optimizer.role_aware_local_placement_debug_records["V0"]["status"] == "selected"
+    assert optimizer.role_aware_local_placement_debug_records["C0"]["status"] == "selected"
+
+
+def test_compile_role_aware_initial_rotations_records_guard_disabled_and_missing_snapshot():
+    optimizer = opt.NetOptimizer()
+    optimizer.sorted_nodes = ["V0", "C0"]
+
+    disabled = optimizer._compile_role_aware_initial_rotations(
+        {
+            "group:V": {"ind_ofsortednodes": [0]},
+            "group:C": {"ind_ofsortednodes": [1]},
+        },
+        semantic_snapshot=OptimizationSemanticSnapshot(
+            family_name="ROLE-AWARE",
+            graph_phase="sG",
+        ),
+    )
+
+    assert disabled == {}
+    assert optimizer.role_aware_local_placement_debug_records["V0"]["fallback_reason"] == "guard_disabled"
+    assert optimizer.role_aware_local_placement_debug_records["C0"]["fallback_reason"] == "guard_disabled"
+
+    optimizer.use_role_aware_local_placement = True
+    missing_snapshot = optimizer._compile_role_aware_initial_rotations(
+        {
+            "group:V": {"ind_ofsortednodes": [0]},
+            "group:C": {"ind_ofsortednodes": [1]},
+        },
+        semantic_snapshot=None,
+    )
+
+    assert missing_snapshot == {}
+    assert optimizer.role_aware_local_placement_debug_records["V0"]["fallback_reason"] == "missing_semantic_snapshot"
+    assert optimizer.role_aware_local_placement_debug_records["C0"]["fallback_reason"] == "missing_semantic_snapshot"
+
+
+def test_compile_role_aware_initial_rotations_records_selected_and_fallback_debug_details():
+    rotation_expected = np.array(
+        [
+            [0.0, -1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    translation_expected = np.array([5.0, -2.0, 0.5])
+    source_anchor_real = (2.0, 0.0, 0.0)
+    source_anchor_real_2 = (0.0, 0.0, 2.0)
+    source_direction_null = (0.0, 1.0, 0.0)
+    target_anchor_real = tuple(
+        np.dot(np.asarray(source_anchor_real), rotation_expected) + translation_expected
+    )
+    target_anchor_real_2 = tuple(
+        np.dot(np.asarray(source_anchor_real_2), rotation_expected) + translation_expected
+    )
+    target_direction_null = tuple(
+        np.dot(np.asarray(source_direction_null), rotation_expected)
+    )
+
+    semantic_snapshot = OptimizationSemanticSnapshot(
+        family_name="ROLE-AWARE",
+        graph_phase="sG",
+        graph_node_records={
+            "V0": GraphNodeSemanticRecord(
+                node_id="V0",
+                role_id="node:VA",
+                role_class="V",
+                slot_rules=(
+                    {
+                        "attachment_index": 0,
+                        "slot_type": "XA",
+                        "anchor_vector": source_anchor_real,
+                        "chemistry_direction": source_anchor_real,
+                    },
+                    {
+                        "attachment_index": 1,
+                        "slot_type": "XB",
+                        "anchor_vector": source_direction_null,
+                        "chemistry_direction": source_direction_null,
+                    },
+                    {
+                        "attachment_index": 2,
+                        "slot_type": "XC",
+                        "anchor_vector": source_anchor_real_2,
+                        "chemistry_direction": source_anchor_real_2,
+                    },
+                ),
+                incident_edge_ids=("V0|V1", "V0|V2", "V0|V3"),
+                incident_edge_role_ids=("edge:EA", "edge:EB", "edge:EC"),
+                incident_edge_constraints=(
+                    {"edge_id": "V0|V1", "edge_role_id": "edge:EA", "slot_index": 0},
+                    {"edge_id": "V0|V2", "edge_role_id": "edge:EB", "slot_index": 1},
+                    {"edge_id": "V0|V3", "edge_role_id": "edge:EC", "slot_index": 2},
+                ),
+            ),
+            "Q0": GraphNodeSemanticRecord(
+                node_id="Q0",
+                role_id="node:QA",
+                role_class="Q",
+            ),
+        },
+        graph_edge_records={
+            "V0|V1": GraphEdgeSemanticRecord(
+                edge_id="V0|V1",
+                graph_edge=("V0", "V1"),
+                edge_role_id="edge:EA",
+                path_type="V-E-V",
+                endpoint_node_ids=("V0", "V1"),
+                endpoint_role_ids=("node:VA", "node:VB"),
+                endpoint_pattern=("VA", "EA", "VB"),
+                slot_index={"V0": 0, "V1": 0},
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                ),
+                metadata={"target_point_by_node": {"V0": target_anchor_real}},
+            ),
+            "V0|V2": GraphEdgeSemanticRecord(
+                edge_id="V0|V2",
+                graph_edge=("V0", "V2"),
+                edge_role_id="edge:EB",
+                path_type="V-E-V",
+                endpoint_node_ids=("V0", "V2"),
+                endpoint_role_ids=("node:VA", "node:VC"),
+                endpoint_pattern=("VA", "EB", "VC"),
+                slot_index={"V0": 1, "V2": 0},
+                slot_rules=(
+                    {"attachment_index": 1, "slot_type": "XB", "endpoint_side": "V"},
+                ),
+                resolve_mode="alignment_only",
+                is_null_edge=True,
+                null_payload_model="duplicated_zero_length_anchors",
+                metadata={"target_vector_by_node": {"V0": target_direction_null}},
+            ),
+            "V0|V3": GraphEdgeSemanticRecord(
+                edge_id="V0|V3",
+                graph_edge=("V0", "V3"),
+                edge_role_id="edge:EC",
+                path_type="V-E-V",
+                endpoint_node_ids=("V0", "V3"),
+                endpoint_role_ids=("node:VA", "node:VD"),
+                endpoint_pattern=("VA", "EC", "VD"),
+                slot_index={"V0": 2, "V3": 0},
+                slot_rules=(
+                    {"attachment_index": 2, "slot_type": "XC", "endpoint_side": "V"},
+                ),
+                metadata={"target_point_by_node": {"V0": target_anchor_real_2}},
+            ),
+        },
+        node_role_records={
+            "node:VA": NodeRoleRecord(
+                role_id="node:VA",
+                family_alias="VA",
+                role_class="V",
+                slot_rules=(
+                    {
+                        "attachment_index": 0,
+                        "slot_type": "XA",
+                        "anchor_vector": source_anchor_real,
+                        "chemistry_direction": source_anchor_real,
+                    },
+                    {
+                        "attachment_index": 1,
+                        "slot_type": "XB",
+                        "anchor_vector": source_direction_null,
+                        "chemistry_direction": source_direction_null,
+                    },
+                    {
+                        "attachment_index": 2,
+                        "slot_type": "XC",
+                        "anchor_vector": source_anchor_real_2,
+                        "chemistry_direction": source_anchor_real_2,
+                    },
+                ),
+            ),
+        },
+        edge_role_records={
+            "edge:EA": EdgeRoleRecord(
+                role_id="edge:EA",
+                family_alias="EA",
+                role_class="E",
+                endpoint_pattern=("VA", "EA", "VB"),
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                ),
+            ),
+            "edge:EB": EdgeRoleRecord(
+                role_id="edge:EB",
+                family_alias="EB",
+                role_class="E",
+                endpoint_pattern=("VA", "EB", "VC"),
+                slot_rules=(
+                    {"attachment_index": 1, "slot_type": "XB", "endpoint_side": "V"},
+                ),
+                resolve_mode="alignment_only",
+                null_edge_policy=NullEdgePolicyRecord(
+                    edge_role_id="edge:EB",
+                    edge_kind="null",
+                    is_null_edge=True,
+                    null_payload_model="duplicated_zero_length_anchors",
+                ),
+            ),
+            "edge:EC": EdgeRoleRecord(
+                role_id="edge:EC",
+                family_alias="EC",
+                role_class="E",
+                endpoint_pattern=("VA", "EC", "VD"),
+                slot_rules=(
+                    {"attachment_index": 2, "slot_type": "XC", "endpoint_side": "V"},
+                ),
+            ),
+        },
+        null_edge_policy_records={
+            "edge:EB": NullEdgePolicyRecord(
+                edge_role_id="edge:EB",
+                edge_kind="null",
+                is_null_edge=True,
+                null_payload_model="duplicated_zero_length_anchors",
+            ),
+        },
+    )
+
+    optimizer = opt.NetOptimizer(semantic_snapshot=semantic_snapshot)
+    optimizer.sorted_nodes = ["V0", "Q0"]
+    optimizer.use_role_aware_local_placement = True
+
+    rotations = optimizer._compile_role_aware_initial_rotations(
+        {
+            "group:V": {"ind_ofsortednodes": [0]},
+            "group:Q": {"ind_ofsortednodes": [1]},
+        },
+        semantic_snapshot=semantic_snapshot,
+    )
+
+    assert set(rotations) == {"group:V"}
+    assert np.allclose(rotations["group:V"], rotation_expected)
+
+    selected_debug = optimizer.role_aware_local_placement_debug_records["V0"]
+    assert selected_debug["status"] == "selected"
+    assert selected_debug["candidate_count"] == 1
+    assert selected_debug["selected_assignment"] == {"V0|V1": 0, "V0|V2": 1, "V0|V3": 2}
+    assert selected_debug["null_edge_count"] == 1
+    assert selected_debug["alignment_only_count"] == 1
+    assert selected_debug["resolve_mode_hints"] == ("alignment_only",)
+    assert selected_debug["orientation_only_pair_count"] == 2
+    assert selected_debug["used_ambiguity_resolution"] is False
+
+    fallback_debug = optimizer.role_aware_local_placement_debug_records["Q0"]
+    assert fallback_debug["status"] == "fallback"
+    assert fallback_debug["fallback_reason"] == "unsupported_role_class"
+    assert fallback_debug["candidate_count"] == 0
+
+
 def test_compile_node_placement_contract_supports_default_role_snapshot():
     semantic_snapshot = OptimizationSemanticSnapshot(
         family_name="DEFAULT-FAMILY",
