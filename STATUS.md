@@ -3,9 +3,9 @@
 ## Workflow Status
 
 - Phase: Phase 8
-- Checkpoint: phase-8-executor-implemented
-- Status: COMPLETED_PENDING_PLANNER
-- Next step: Planner reviews completion and decides whether to advance
+- Checkpoint: workflow-complete
+- Status: COMPLETED
+- Next step: done
 - Last update: 2026-03-14
 
 ## Branch
