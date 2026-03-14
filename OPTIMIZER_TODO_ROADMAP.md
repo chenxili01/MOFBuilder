@@ -15,6 +15,7 @@ This document is intentionally practical:
 It should be read together with:
 
 - `OPTIMIZER_DISCUSSION_MEMORY.md`
+- `SNAPSHOT_API_HANDOFF.md`
 - `ROUND1_CHECKPOINT.md`
 - `ROUND2_CHECKPOINT.md`
 - the snapshot API documents created for the `role-runtime-contract` branch
@@ -57,6 +58,8 @@ Expected concept:
 OptimizationSemanticSnapshot
 ```
 
+Use `SNAPSHOT_API_HANDOFF.md` as the concrete contract reference for the implemented Phase 5 snapshot surface.
+
 ## 2.2 Snapshot contents are sufficient
 At minimum the snapshot must expose:
 
@@ -70,6 +73,8 @@ At minimum the snapshot must expose:
 - bundle/order hints where relevant
 - null-edge rules
 - resolve mode hints affecting geometry
+
+The currently implemented fields and record names should be taken from `SNAPSHOT_API_HANDOFF.md`, not redefined ad hoc in the optimizer branch.
 
 ## 2.3 Snapshot compatibility is tested
 Legacy/default-role families must still work.
@@ -138,6 +143,8 @@ This is the most important section.
 ### Goal
 Create a helper that compiles the minimum local placement data for one node from the snapshot.
 
+This helper should be derived from the documented `OptimizationSemanticSnapshot` contract in `SNAPSHOT_API_HANDOFF.md`.
+
 ### Suggested output
 For one node, produce a structure like:
 
@@ -156,6 +163,7 @@ NodePlacementContract(
 ### Must include
 - node id
 - node role id
+- node role class
 - local slot indices
 - local slot types
 - local anchor coordinates or local anchor vectors
@@ -164,7 +172,9 @@ NodePlacementContract(
 - required slot type at this endpoint
 - target graph direction for each incident edge
 - null-edge / alignment-only flags
+- null payload model where present
 - optional local order hints if needed
+- resolve-mode hints that affect geometry interpretation
 
 ### Why first
 This is the smallest correct unit of future placement logic.
@@ -208,6 +218,8 @@ Use:
 - SVD / Kabsch
 - local anchor vectors or anchor points
 - graph-derived target directions / targets
+
+The handoff document intentionally leaves the exact target representation open. Pick one explicit representation in the later branch plan before implementation and document why.
 
 ### Intended behavior
 For a fully coordinated node:
@@ -260,6 +272,8 @@ Start with:
 - angle penalty
 - clash penalty
 - null-edge alignment penalty
+
+These terms are still handoff-stage candidates. Treat them as next-branch design work, not already-settled runtime behavior.
 
 ### Constraint rule
 Illegal correspondence is still forbidden.
@@ -460,3 +474,5 @@ That means:
 5. only then wider optimizer integration
 
 This roadmap should keep the future optimizer branch focused and prevent it from rewriting too many things at once.
+
+For the exact implemented snapshot layers, record types, and ownership guardrails, defer to `SNAPSHOT_API_HANDOFF.md`.

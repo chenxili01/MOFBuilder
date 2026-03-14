@@ -914,3 +914,174 @@ notes:
 - Checkpoint: phase-5-optimizer-hook-implemented
 - Status: COMPLETED_PENDING_PLANNER
 - Next step: Planner reviews completion and decides whether to advance
+
+
+## planner-run
+
+- Timestamp: 2026-03-14T17:48:56+00:00
+
+## Active Phase
+- Phase: 6
+- Name: Documentation and Handoff for Rotation Rewrite
+
+## Objective
+Phase 6 is a documentation-only handoff. The executor should capture the finalized snapshot contract, the expected node-local optimizer input shape, the SVD/Kabsch plus constrained-refinement handoff model, and the remaining open decisions for the later optimizer rewrite branch, without changing production behavior or widening module scope.
+
+## Scope
+- `SNAPSHOT_API_HANDOFF.md` (new workflow markdown handoff doc)
+- `OPTIMIZER_TODO_ROADMAP.md`
+- `OPTIMIZER_DISCUSSION_MEMORY.md`
+- `WORKLOG.md`
+- `STATUS.md`
+
+## Tasks
+1. Create `SNAPSHOT_API_HANDOFF.md` as the authoritative Phase 6 handoff document. It should enumerate the current snapshot layers (`RoleRuntimeSnapshot`, `OptimizationSemanticSnapshot`, `FrameworkInputSnapshot`), summarize their ownership boundaries, and document the concrete Phase 5-ready optimizer-facing fields without inventing new runtime semantics.
+2. In `SNAPSHOT_API_HANDOFF.md`, define the expected node-local contract for the later optimizer rewrite as a downstream compiled view derived from `OptimizationSemanticSnapshot`: node id, node role id, incident edges, slot requirements/types, bundle or order hints where relevant, null-edge flags, and resolve-mode hints. Keep this as a future-consumer contract description, not an implementation task for this branch.
+3. Update `OPTIMIZER_TODO_ROADMAP.md` and `OPTIMIZER_DISCUSSION_MEMORY.md` so they reference the finalized snapshot handoff and align on the staged future flow: semantic legality first, node-local contract compilation, SVD/Kabsch initialization, then constrained refinement. Record unresolved decisions cleanly and explicitly mark them as next-branch work rather than current-branch scope.
+4. Append a Phase 6 planner/executor handoff entry to `WORKLOG.md`, then update `STATUS.md` at completion to reflect Phase 6 execution status and branch-ready handoff.
+
+## Validation
+- Confirm only workflow markdown files are modified; no production source files or behavior changes are introduced.
+- Cross-check the written contract against `ROUND1_CHECKPOINT.md` and `ROUND2_CHECKPOINT.md`: graph remains the source of truth, builder owns interpretation and snapshot compilation, optimizer remains a consumer of narrowed semantics, framework stays role-agnostic, primitive-first ordering stays intact, and null edge remains distinct from zero-length real edge.
+
+## Non-goals
+- Do not modify any production Python modules, tests, optimizer behavior, framework behavior, or pipeline order.
+- Do not redesign snapshot ownership, add new runtime fields that are not already supported by the implemented snapshot seam, or start the optimizer/rotation rewrite itself.
+
+## Exit Criteria
+- A clear Phase 6 handoff document exists and records snapshot fields, node-local contract expectations, the SVD/constrained-refinement handoff model, and unresolved next-branch decisions.
+- `OPTIMIZER_TODO_ROADMAP.md`, `OPTIMIZER_DISCUSSION_MEMORY.md`, `WORKLOG.md`, and `STATUS.md` are synchronized with that handoff, and the branch is ready for the later optimizer rewrite planning step.
+
+## STATUS.md Update
+- Phase: Phase 6
+- Checkpoint: phase-6-plan-ready
+- Status: READY_FOR_EXECUTOR
+- Next step: Executor implements the active phase only
+
+
+## 2026-03-14 — executor — complete phase 6 snapshot handoff docs
+
+branch:
+role-runtime-contract
+
+phase:
+Phase 6 — Documentation and Handoff for Rotation Rewrite
+
+checkpoint:
+phase-6-handoff-documented
+
+summary:
+- Added `SNAPSHOT_API_HANDOFF.md` as the authoritative Phase 6 handoff document for the implemented snapshot seam, ownership boundaries, optimizer-facing fields, future node-local contract expectations, and SVD/Kabsch plus constrained-refinement handoff.
+- Aligned `OPTIMIZER_TODO_ROADMAP.md` and `OPTIMIZER_DISCUSSION_MEMORY.md` to reference the finalized snapshot handoff and keep future optimizer work anchored to the implemented Phase 5 contract instead of memory or ad hoc field expansion.
+- Updated workflow control files for planner handoff without changing any production source files or runtime behavior.
+
+files touched:
+- SNAPSHOT_API_HANDOFF.md
+- OPTIMIZER_TODO_ROADMAP.md
+- OPTIMIZER_DISCUSSION_MEMORY.md
+- WORKLOG.md
+- STATUS.md
+
+invariants checked:
+- Topology graph remains the source of truth for role ids; the handoff explicitly preserves graph-stored `node_role_id` and `edge_role_id`.
+- Builder remains the owner of role interpretation and snapshot compilation; optimizer is documented only as a narrowed consumer.
+- Framework remains role-agnostic in this branch and `FrameworkInputSnapshot` remains a handoff concept rather than new framework behavior.
+- Primitive-first optimization order, bundle ownership, graph grammar, and null-edge versus zero-length real-edge distinction were preserved in the written contract.
+- No production behavior or module ownership changed during Phase 6.
+
+validation:
+- `git diff --check -- SNAPSHOT_API_HANDOFF.md OPTIMIZER_TODO_ROADMAP.md OPTIMIZER_DISCUSSION_MEMORY.md WORKLOG.md STATUS.md`
+- `git status --short` confirmed the Phase 6 change set is limited to workflow markdown files, including the new untracked handoff document.
+- Cross-checked the written handoff against `ROUND1_CHECKPOINT.md`, `ROUND2_CHECKPOINT.md`, `PLAN.md`, and `PHASE_SPEC.md` to keep ownership and semantics aligned.
+
+notes:
+- Phase 6 is documentation-only; no tests or production runtime checks were required beyond confirming the change set stayed inside allowed markdown scope.
+- The next step is planner-owned: use the handoff document to define the later optimizer / rotation reconstruction branch or phase.
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T18:10:00+00:00
+
+## Active Phase
+- Phase: 6
+- Name: Documentation and Handoff for Rotation Rewrite
+
+## Implemented
+- Added `SNAPSHOT_API_HANDOFF.md` as the authoritative snapshot seam handoff covering implemented snapshot fields, ownership boundaries, node-local contract expectations, and the SVD/Kabsch plus constrained-refinement handoff.
+- Updated `OPTIMIZER_TODO_ROADMAP.md` and `OPTIMIZER_DISCUSSION_MEMORY.md` so future optimizer work references the finalized snapshot contract instead of re-deriving it.
+- Updated `WORKLOG.md` and `STATUS.md` for executor completion and planner handoff without changing production behavior.
+
+## Files Changed
+- `SNAPSHOT_API_HANDOFF.md`
+- `OPTIMIZER_TODO_ROADMAP.md`
+- `OPTIMIZER_DISCUSSION_MEMORY.md`
+- `WORKLOG.md`
+- `STATUS.md`
+
+## Validation
+- `git diff --check -- SNAPSHOT_API_HANDOFF.md OPTIMIZER_TODO_ROADMAP.md OPTIMIZER_DISCUSSION_MEMORY.md WORKLOG.md STATUS.md`
+- `git status --short`
+- Manual cross-check against `ROUND1_CHECKPOINT.md`, `ROUND2_CHECKPOINT.md`, `PLAN.md`, and `PHASE_SPEC.md`
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- The exact node-local target representation for the later optimizer branch remains intentionally unresolved and should be planner-scoped next-branch work.
+- The minimal constrained-refinement objective remains intentionally unresolved and should be planned before any optimizer rewrite begins.
+
+## STATUS.md Update
+- Phase: Phase 6
+- Checkpoint: phase-6-handoff-documented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T17:53:39+00:00
+
+## Active Phase
+- Phase: 6
+- Name: Documentation and Handoff for Rotation Rewrite
+
+## Implemented
+- Added the authoritative Phase 6 handoff document in [SNAPSHOT_API_HANDOFF.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/SNAPSHOT_API_HANDOFF.md) covering the implemented snapshot layers, ownership boundaries, concrete optimizer-facing fields, node-local contract expectations, and the SVD/Kabsch plus constrained-refinement handoff.
+- Updated [OPTIMIZER_TODO_ROADMAP.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/OPTIMIZER_TODO_ROADMAP.md) to anchor future optimizer work to the finalized snapshot contract instead of re-deriving fields ad hoc.
+- Updated [OPTIMIZER_DISCUSSION_MEMORY.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/OPTIMIZER_DISCUSSION_MEMORY.md) so the stored optimizer reasoning now points back to the finalized handoff doc and keeps the open questions explicitly scoped to the next branch.
+- Appended the Phase 6 executor entry in [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) and handed control back to the planner in [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md).
+
+## Files Changed
+- [SNAPSHOT_API_HANDOFF.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/SNAPSHOT_API_HANDOFF.md)
+- [OPTIMIZER_TODO_ROADMAP.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/OPTIMIZER_TODO_ROADMAP.md)
+- [OPTIMIZER_DISCUSSION_MEMORY.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/OPTIMIZER_DISCUSSION_MEMORY.md)
+- [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md)
+- [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md)
+
+## Validation
+- `git diff --check -- SNAPSHOT_API_HANDOFF.md OPTIMIZER_TODO_ROADMAP.md OPTIMIZER_DISCUSSION_MEMORY.md WORKLOG.md STATUS.md`
+- `git status --short`
+- Manual cross-check against `ROUND1_CHECKPOINT.md`, `ROUND2_CHECKPOINT.md`, `PLAN.md`, and `PHASE_SPEC.md`
+- No tests were run because Phase 6 is documentation-only and production code was not modified
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- The exact node-local target representation remains intentionally unresolved and should be planned in the later optimizer branch.
+- The minimal constrained-refinement objective remains intentionally unresolved and should be decided before any optimizer rewrite starts.
+
+## STATUS.md Update
+- Phase: Phase 6
+- Checkpoint: phase-6-handoff-documented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance

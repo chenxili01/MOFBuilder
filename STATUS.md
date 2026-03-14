@@ -2,8 +2,8 @@
 
 ## Workflow Status
 
-- Phase: Phase 5
-- Checkpoint: phase-5-optimizer-hook-implemented
+- Phase: Phase 6
+- Checkpoint: phase-6-handoff-documented
 - Status: COMPLETED_PENDING_PLANNER
 - Next step: Planner reviews completion and decides whether to advance
 - Last update: 2026-03-14
@@ -18,7 +18,7 @@ Establish a clean, builder-owned snapshot API that future optimizer/rotation rec
 
 ## Current Focus
 
-Add the smallest optional optimizer snapshot-ingestion hook so the optimizer can accept a builder-compiled semantic snapshot without changing default behavior, optimizer scoring/objective logic, framework behavior, supercell behavior, or the build pipeline.
+Prepare the documentation and branch handoff for the later optimizer/rotation reconstruction branch by documenting snapshot fields, the expected node-local contract, the SVD/Kabsch initializer plus constrained-refinement handoff, and unresolved follow-up decisions without changing production behavior.
 
 ## Invariants
 

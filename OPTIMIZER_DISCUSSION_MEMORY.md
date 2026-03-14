@@ -16,6 +16,8 @@ That branch currently focuses on the **clean snapshot API first**.
 
 This document is the stored memory for the **later optimizer modification branch**.
 
+The concrete implemented snapshot contract for that later branch is recorded separately in `SNAPSHOT_API_HANDOFF.md`.
+
 ---
 
 # 1. Core Problem We Identified
@@ -173,6 +175,8 @@ OptimizationSemanticSnapshot
 
 This is the clean handoff boundary for the later optimizer work.
 
+The exact currently implemented snapshot fields should be read from `SNAPSHOT_API_HANDOFF.md` rather than reconstructed from memory.
+
 ---
 
 # 5. Major Design Decision: Keep Optimizer, But Change What It Does
@@ -211,6 +215,8 @@ Builder/runtime snapshot determines:
 - required slot type at each endpoint
 - target graph directions
 - null-edge behavior
+
+The later branch should first compile a node-local contract from the current `OptimizationSemanticSnapshot` surface documented in `SNAPSHOT_API_HANDOFF.md`.
 
 ### Stage B — direct rigid placement
 If correspondence is known, compute node rotation by:
@@ -385,6 +391,8 @@ This separation is intentional and important.
 
 These were not fully resolved and should stay visible.
 
+These are next-branch planning questions, not unresolved production bugs in the current snapshot seam branch.
+
 ## 11.1 Exact node-local target representation
 
 Open question:
@@ -452,7 +460,7 @@ This still needs implementation design later.
 
 When future optimizer work begins, the recommended order is:
 
-1. finish clean snapshot API
+1. read `SNAPSHOT_API_HANDOFF.md` and keep the documented contract stable
 2. define per-node semantic contract for fully coordinated nodes
 3. implement one node-local solver prototype
 4. use:
