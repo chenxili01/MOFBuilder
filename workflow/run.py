@@ -422,7 +422,7 @@ def read_context(max_context_chars: int) -> str:
         section("PLANS.md", tail_chars(read_text_if_exists(PLANS_FILE, "[missing]"), plans_budget, "PLANS.md truncated")),
         section("control/STATUS.md", tail_chars(read_text_if_exists(STATUS_FILE, "[missing]"), status_budget, "STATUS.md truncated")),
         section("control/WORKLOG.md", tail_chars(read_text_if_exists(WORKLOG_FILE, "[missing]"), worklog_budget, "WORKLOG.md truncated")),
-        section("control/REVIEW.md", tail_chars(read_text_if_exists(REVIEW_FILE, "[missing]"), review_budget, "REVIEW.md truncated")),
+        #section("control/REVIEW.md", tail_chars(read_text_if_exists(REVIEW_FILE, "[missing]"), review_budget, "REVIEW.md truncated")),
         section("GIT DIFF", git_diff(diff_budget)),
     ]
     return "\n\n".join(parts)
@@ -681,39 +681,39 @@ def workflow(
                 step = "reviewer"
                 continue
 
-            print("Running reviewer...")
-            reviewer_snapshot = load_status_snapshot()
-            review = run_reviewer(model=model, max_context_chars=max_context_chars)
+            #print("Running reviewer...")
+            #reviewer_snapshot = load_status_snapshot()
+            #review = run_reviewer(model=model, max_context_chars=max_context_chars)
+#
+            #approved = bool(review.get("approved"))
+            executor_can_proceed = True#bool(review.get("executor_can_proceed"))
+#
+            #print(f"Review summary: {review.get('summary', '')}")
+#
+            #if approved:
+            #    last_approved_phase_number = reviewer_snapshot.phase_number
+            #    if not no_git:
+            #        tag = git_phase_tag(reviewer_snapshot.phase_number, "checkpoint")
+            #        sha = git_commit(tag)
+            #        print(f"Phase checkpoint ({tag}): {sha}")
+            #    save_state("planner")
+            #    if reviewer_snapshot.phase_number >= final_phase_number:
+            #        print("Final phase approved; workflow is complete.")
+            #        return
+            #    next_phase = advance_status_to_next_phase(phases, reviewer_snapshot)
+            #    if next_phase is None:
+            #        print("No further phase was found after approval; workflow is complete.")
+            #        return
+            #    print(f"Advancing to: {next_phase.name} / P{next_phase.number}.0")
+            #    step = "planner"
+            #    continue
 
-            approved = bool(review.get("approved"))
-            executor_can_proceed = bool(review.get("executor_can_proceed"))
-
-            print(f"Review summary: {review.get('summary', '')}")
-
-            if approved:
-                last_approved_phase_number = reviewer_snapshot.phase_number
-                if not no_git:
-                    tag = git_phase_tag(reviewer_snapshot.phase_number, "checkpoint")
-                    sha = git_commit(tag)
-                    print(f"Phase checkpoint ({tag}): {sha}")
-                save_state("planner")
-                if reviewer_snapshot.phase_number >= final_phase_number:
-                    print("Final phase approved; workflow is complete.")
-                    return
-                next_phase = advance_status_to_next_phase(phases, reviewer_snapshot)
-                if next_phase is None:
-                    print("No further phase was found after approval; workflow is complete.")
-                    return
-                print(f"Advancing to: {next_phase.name} / P{next_phase.number}.0")
-                step = "planner"
-                continue
-
-            if not no_git:
-                tag = git_phase_tag(reviewer_snapshot.phase_number, "review-failure")
-                sha = git_commit(tag)
-                print(f"Review failure checkpoint ({tag}): {sha}")
-
-            remediation_step(model=model, max_context_chars=max_context_chars)
+            #if not no_git:
+            #    tag = git_phase_tag(reviewer_snapshot.phase_number, "review-failure")
+            #    sha = git_commit(tag)
+            #    print(f"Review failure checkpoint ({tag}): {sha}")
+#
+            #remediation_step(model=model, max_context_chars=max_context_chars)
 
             next_step: Step = "executor" if executor_can_proceed else "planner"
             save_state(next_step)

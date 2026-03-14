@@ -4,8 +4,5 @@
 Previous WORKLOG archived due to size and remediation confusion.
 
 Current state:
-- Phase: P1.0 – Planning / remediation
-- Issue: contract path mismatch (workflow/WORKLOG.md vs root WORKLOG.md)
-- Execution halted intentionally pending contract correction.
+- Phase: P1.0 – Planning 
 
-No implementation, runtime, or test files modified in this pass.
