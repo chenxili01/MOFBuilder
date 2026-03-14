@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Dict, Mapping, Optional, Tuple
 
+import numpy as np
+
 from .runtime_snapshot import (
     EdgeRoleRecord,
     GraphEdgeSemanticRecord,
@@ -11,6 +13,7 @@ from .runtime_snapshot import (
     NodeRoleRecord,
     OptimizationSemanticSnapshot,
 )
+from .superimpose import svd_superimpose
 
 
 FrozenMapping = Mapping[str, Any]
@@ -154,6 +157,40 @@ class LegalNodeCorrespondence:
     def __post_init__(self) -> None:
         object.__setattr__(self, "assignments", _freeze_tuple(self.assignments))
         object.__setattr__(self, "edge_to_slot_index", _freeze_mapping(self.edge_to_slot_index))
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+
+@dataclass(frozen=True)
+class RigidAnchorPair:
+    edge_id: str
+    slot_index: int
+    source_anchor: Tuple[float, float, float]
+    target_anchor: Tuple[float, float, float]
+    metadata: FrozenMapping = field(default_factory=lambda: MappingProxyType({}))
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "source_anchor", _freeze_tuple(self.source_anchor))
+        object.__setattr__(self, "target_anchor", _freeze_tuple(self.target_anchor))
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+
+@dataclass(frozen=True)
+class NodeLocalRigidInitialization:
+    node_id: str
+    node_role_id: str
+    correspondence: LegalNodeCorrespondence
+    anchor_pairs: Tuple[RigidAnchorPair, ...]
+    rotation_matrix: Tuple[Tuple[float, float, float], ...]
+    translation_vector: Tuple[float, float, float]
+    rmsd: float
+    source_anchor_representation: str
+    target_anchor_representation: str
+    metadata: FrozenMapping = field(default_factory=lambda: MappingProxyType({}))
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "anchor_pairs", _freeze_tuple(self.anchor_pairs))
+        object.__setattr__(self, "rotation_matrix", _freeze_tuple(self.rotation_matrix))
+        object.__setattr__(self, "translation_vector", _freeze_tuple(self.translation_vector))
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
 
 
@@ -312,6 +349,56 @@ def _candidate_slot_indices(
     return tuple(legal_indices)
 
 
+def _coerce_point3(value: Any) -> Optional[Tuple[float, float, float]]:
+    if value is None:
+        return None
+    if isinstance(value, np.ndarray):
+        flat = value.astype(float).reshape(-1)
+    elif isinstance(value, (tuple, list)):
+        flat = np.asarray(value, dtype=float).reshape(-1)
+    else:
+        return None
+
+    if flat.shape[0] != 3:
+        return None
+    return (float(flat[0]), float(flat[1]), float(flat[2]))
+
+
+def _extract_source_anchor(slot_rule: FrozenMapping) -> Optional[Tuple[float, float, float]]:
+    return (
+        _coerce_point3(slot_rule.get("anchor_vector"))
+        or _coerce_point3(slot_rule.get("anchor_point"))
+        or _coerce_point3(slot_rule.get("anchor_position"))
+    )
+
+
+def _extract_target_anchor(
+    requirement: IncidentEdgePlacementRequirement,
+    local_node_id: str,
+) -> Optional[Tuple[float, float, float]]:
+    if requirement.target_direction is None:
+        return None
+
+    metadata = requirement.target_direction.metadata
+    edge_metadata = metadata.get("edge_metadata", {})
+    constraint = metadata.get("constraint", {})
+
+    return (
+        _coerce_point3(metadata.get("target_anchor"))
+        or _coerce_point3(metadata.get("target_point"))
+        or _coerce_point3(metadata.get("target_vector"))
+        or _coerce_point3(constraint.get("target_anchor"))
+        or _coerce_point3(constraint.get("target_point"))
+        or _coerce_point3(constraint.get("target_vector"))
+        or _coerce_point3(edge_metadata.get("target_anchor"))
+        or _coerce_point3(edge_metadata.get("target_point"))
+        or _coerce_point3(edge_metadata.get("target_vector"))
+        or _coerce_point3((edge_metadata.get("target_anchor_by_node") or {}).get(local_node_id))
+        or _coerce_point3((edge_metadata.get("target_point_by_node") or {}).get(local_node_id))
+        or _coerce_point3((edge_metadata.get("target_vector_by_node") or {}).get(local_node_id))
+    )
+
+
 def _build_legal_correspondence(
     contract: NodePlacementContract,
     assignment_by_incident_index: Dict[int, int],
@@ -425,6 +512,22 @@ def compile_node_placement_contract(
                 "constraint": constraint,
                 "edge_slot_index": edge_record.slot_index,
                 "null_policy_edge_kind": null_policy.edge_kind if null_policy is not None else None,
+                "edge_metadata": edge_record.metadata,
+                "target_anchor": (
+                    constraint.get("target_anchor")
+                    or edge_record.metadata.get("target_anchor")
+                    or (edge_record.metadata.get("target_anchor_by_node") or {}).get(node_record.node_id)
+                ),
+                "target_point": (
+                    constraint.get("target_point")
+                    or edge_record.metadata.get("target_point")
+                    or (edge_record.metadata.get("target_point_by_node") or {}).get(node_record.node_id)
+                ),
+                "target_vector": (
+                    constraint.get("target_vector")
+                    or edge_record.metadata.get("target_vector")
+                    or (edge_record.metadata.get("target_vector_by_node") or {}).get(node_record.node_id)
+                ),
             },
         )
         incident_requirements.append(incident_requirement)
@@ -509,3 +612,91 @@ def compile_legal_node_correspondences(
         )
     )
     return tuple(correspondence_candidates)
+
+
+def compile_local_rigid_initialization(
+    semantic_snapshot: OptimizationSemanticSnapshot,
+    node_id: str,
+    node_contract: Optional[NodePlacementContract] = None,
+    correspondence: Optional[LegalNodeCorrespondence] = None,
+) -> NodeLocalRigidInitialization:
+    contract = node_contract or compile_node_placement_contract(semantic_snapshot, node_id)
+    selected_correspondence = correspondence
+    if selected_correspondence is None:
+        correspondences = compile_legal_node_correspondences(
+            semantic_snapshot,
+            node_id,
+            node_contract=contract,
+        )
+        if len(correspondences) != 1:
+            raise ValueError(
+                "single legal correspondence is required for deterministic local rigid initialization."
+            )
+        selected_correspondence = correspondences[0]
+
+    requirement_by_edge_id = {
+        requirement.edge_id: requirement for requirement in contract.incident_requirements
+    }
+    anchor_pairs = []
+    source_points = []
+    target_points = []
+
+    for assignment in selected_correspondence.assignments:
+        requirement = requirement_by_edge_id[assignment.edge_id]
+        slot_rule = contract.slot_rules[assignment.slot_index]
+        source_anchor = _extract_source_anchor(slot_rule)
+        if source_anchor is None:
+            raise ValueError(
+                f"Missing explicit local anchor representation for slot {assignment.slot_index} on node {node_id}."
+            )
+        target_anchor = _extract_target_anchor(requirement, contract.node_id)
+        if target_anchor is None:
+            raise ValueError(
+                f"Missing explicit target anchor representation for edge {assignment.edge_id} on node {node_id}."
+            )
+        source_points.append(source_anchor)
+        target_points.append(target_anchor)
+        anchor_pairs.append(
+            RigidAnchorPair(
+                edge_id=assignment.edge_id,
+                slot_index=assignment.slot_index,
+                source_anchor=source_anchor,
+                target_anchor=target_anchor,
+                metadata={
+                    "slot_type": assignment.slot_type,
+                    "path_type": assignment.path_type,
+                    "resolve_mode": assignment.resolve_mode,
+                    "is_null_edge": assignment.is_null_edge,
+                },
+            )
+        )
+
+    if len(anchor_pairs) < 2:
+        raise ValueError("At least two explicit anchor pairs are required for local rigid initialization.")
+
+    rmsd, rotation_matrix, translation_vector = svd_superimpose(
+        np.asarray(source_points, dtype=float),
+        np.asarray(target_points, dtype=float),
+    )
+
+    return NodeLocalRigidInitialization(
+        node_id=contract.node_id,
+        node_role_id=contract.node_role_id,
+        correspondence=selected_correspondence,
+        anchor_pairs=tuple(anchor_pairs),
+        rotation_matrix=tuple(tuple(float(value) for value in row) for row in rotation_matrix),
+        translation_vector=tuple(float(value) for value in translation_vector),
+        rmsd=float(rmsd),
+        source_anchor_representation=(
+            "node slot_rules[*]['anchor_vector'|'anchor_point'|'anchor_position'] "
+            "provide node-local source anchors."
+        ),
+        target_anchor_representation=(
+            "compiled target_direction metadata carries edge-local target anchors via "
+            "constraint or edge metadata target_* fields."
+        ),
+        metadata={
+            "anchor_count": len(anchor_pairs),
+            "graph_phase": semantic_snapshot.graph_phase,
+        },
+    )

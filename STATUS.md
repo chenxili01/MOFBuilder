@@ -2,8 +2,8 @@
 
 ## Workflow Status
 
-- Phase: Phase 2
-- Checkpoint: phase-2-executor-implemented
+- Phase: Phase 3
+- Checkpoint: phase-3-executor-implemented
 - Status: COMPLETED_PENDING_PLANNER
 - Next step: Planner reviews completion and decides whether to advance
 - Last update: 2026-03-14
@@ -18,7 +18,7 @@ Reconstruct the optimizer / rotation logic so local placement is driven by the c
 
 ## Current Focus
 
-Phase 2 executor work implemented a passive legality-first node-local correspondence compiler derived from `OptimizationSemanticSnapshot` and the Phase 1 contract helper, plus tests for legal, illegal, and ambiguous semantic mappings. Do not begin SVD initialization, local refinement, optional integration guards, builder changes, framework changes, or legacy-path replacement until the planner explicitly activates a later phase.
+Phase 3 executor work is implemented and awaiting planner review. The current result adds a passive, deterministic node-local SVD/Kabsch rigid initializer derived only from the Phase 1 node placement contract and Phase 2 legal correspondences for one representative fully coordinated case, with explicit source/target anchor representation documented in code/tests. No discrete ambiguity scoring, local refinement, optional guarded integration wiring, builder changes, framework changes, broad optimizer-loop changes, or legacy-path replacement were added.
 
 ## Invariants
 

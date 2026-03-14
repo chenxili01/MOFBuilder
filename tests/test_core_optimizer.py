@@ -5,7 +5,9 @@ import pytest
 from mofbuilder.core import optimizer as opt
 from mofbuilder.core.optimizer_contract import (
     LegalNodeCorrespondence,
+    NodeLocalRigidInitialization,
     NodePlacementContract,
+    compile_local_rigid_initialization,
     compile_legal_node_correspondences,
     compile_node_placement_contract,
 )
@@ -554,6 +556,222 @@ def test_compile_legal_node_correspondences_requires_snapshot():
 
     with pytest.raises(ValueError, match="OptimizationSemanticSnapshot is required"):
         optimizer.compile_legal_node_correspondences("V0")
+
+
+def test_compile_local_rigid_initialization_returns_deterministic_svd_pose():
+    rotation_expected = np.array(
+        [
+            [0.0, -1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    translation_expected = np.array([2.0, -1.0, 0.5])
+    source_anchors = {
+        0: (1.0, 0.0, 0.0),
+        1: (0.0, 1.0, 0.0),
+        2: (0.0, 0.0, 1.0),
+    }
+    target_points = {
+        slot_index: tuple(np.dot(np.asarray(anchor), rotation_expected) + translation_expected)
+        for slot_index, anchor in source_anchors.items()
+    }
+
+    semantic_snapshot = OptimizationSemanticSnapshot(
+        family_name="ROLE-AWARE",
+        graph_phase="sG",
+        graph_node_records={
+            "V0": GraphNodeSemanticRecord(
+                node_id="V0",
+                role_id="node:VA",
+                role_class="V",
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "anchor_vector": source_anchors[0]},
+                    {"attachment_index": 1, "slot_type": "XB", "anchor_vector": source_anchors[1]},
+                    {"attachment_index": 2, "slot_type": "XC", "anchor_vector": source_anchors[2]},
+                ),
+                incident_edge_ids=("V0|V1", "V0|V2", "V0|V3"),
+                incident_edge_role_ids=("edge:EA", "edge:EB", "edge:EC"),
+                incident_edge_constraints=(
+                    {"edge_id": "V0|V1", "edge_role_id": "edge:EA", "slot_index": 0},
+                    {"edge_id": "V0|V2", "edge_role_id": "edge:EB", "slot_index": 1},
+                    {"edge_id": "V0|V3", "edge_role_id": "edge:EC", "slot_index": 2},
+                ),
+            ),
+        },
+        graph_edge_records={
+            "V0|V1": GraphEdgeSemanticRecord(
+                edge_id="V0|V1",
+                graph_edge=("V0", "V1"),
+                edge_role_id="edge:EA",
+                path_type="V-E-V",
+                endpoint_node_ids=("V0", "V1"),
+                endpoint_role_ids=("node:VA", "node:VB"),
+                endpoint_pattern=("VA", "EA", "VB"),
+                slot_index={"V0": 0, "V1": 0},
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                ),
+                metadata={"target_point_by_node": {"V0": target_points[0]}},
+            ),
+            "V0|V2": GraphEdgeSemanticRecord(
+                edge_id="V0|V2",
+                graph_edge=("V0", "V2"),
+                edge_role_id="edge:EB",
+                path_type="V-E-V",
+                endpoint_node_ids=("V0", "V2"),
+                endpoint_role_ids=("node:VA", "node:VC"),
+                endpoint_pattern=("VA", "EB", "VC"),
+                slot_index={"V0": 1, "V2": 0},
+                slot_rules=(
+                    {"attachment_index": 1, "slot_type": "XB", "endpoint_side": "V"},
+                ),
+                metadata={"target_point_by_node": {"V0": target_points[1]}},
+            ),
+            "V0|V3": GraphEdgeSemanticRecord(
+                edge_id="V0|V3",
+                graph_edge=("V0", "V3"),
+                edge_role_id="edge:EC",
+                path_type="V-E-V",
+                endpoint_node_ids=("V0", "V3"),
+                endpoint_role_ids=("node:VA", "node:VD"),
+                endpoint_pattern=("VA", "EC", "VD"),
+                slot_index={"V0": 2, "V3": 0},
+                slot_rules=(
+                    {"attachment_index": 2, "slot_type": "XC", "endpoint_side": "V"},
+                ),
+                metadata={"target_point_by_node": {"V0": target_points[2]}},
+            ),
+        },
+        node_role_records={
+            "node:VA": NodeRoleRecord(
+                role_id="node:VA",
+                family_alias="VA",
+                role_class="V",
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "anchor_vector": source_anchors[0]},
+                    {"attachment_index": 1, "slot_type": "XB", "anchor_vector": source_anchors[1]},
+                    {"attachment_index": 2, "slot_type": "XC", "anchor_vector": source_anchors[2]},
+                ),
+            ),
+        },
+        edge_role_records={
+            "edge:EA": EdgeRoleRecord(
+                role_id="edge:EA",
+                family_alias="EA",
+                role_class="E",
+                endpoint_pattern=("VA", "EA", "VB"),
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                ),
+            ),
+            "edge:EB": EdgeRoleRecord(
+                role_id="edge:EB",
+                family_alias="EB",
+                role_class="E",
+                endpoint_pattern=("VA", "EB", "VC"),
+                slot_rules=(
+                    {"attachment_index": 1, "slot_type": "XB", "endpoint_side": "V"},
+                ),
+            ),
+            "edge:EC": EdgeRoleRecord(
+                role_id="edge:EC",
+                family_alias="EC",
+                role_class="E",
+                endpoint_pattern=("VA", "EC", "VD"),
+                slot_rules=(
+                    {"attachment_index": 2, "slot_type": "XC", "endpoint_side": "V"},
+                ),
+            ),
+        },
+    )
+
+    rigid_init = compile_local_rigid_initialization(semantic_snapshot, "V0")
+
+    assert isinstance(rigid_init, NodeLocalRigidInitialization)
+    assert rigid_init.metadata["anchor_count"] == 3
+    assert "anchor_vector" in rigid_init.source_anchor_representation
+    assert "target_direction metadata" in rigid_init.target_anchor_representation
+    assert np.allclose(np.asarray(rigid_init.rotation_matrix), rotation_expected)
+    assert np.allclose(np.asarray(rigid_init.translation_vector), translation_expected)
+    assert rigid_init.rmsd == pytest.approx(0.0)
+
+
+def test_compile_local_rigid_initialization_requires_single_known_correspondence():
+    semantic_snapshot = OptimizationSemanticSnapshot(
+        family_name="ROLE-AWARE",
+        graph_phase="sG",
+        graph_node_records={
+            "V0": GraphNodeSemanticRecord(
+                node_id="V0",
+                role_id="node:VA",
+                role_class="V",
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "anchor_vector": (1.0, 0.0, 0.0)},
+                    {"attachment_index": 1, "slot_type": "XA", "anchor_vector": (0.0, 1.0, 0.0)},
+                ),
+                incident_edge_ids=("V0|C0", "V0|C1"),
+                incident_edge_role_ids=("edge:EA", "edge:EA"),
+                incident_edge_constraints=(
+                    {"edge_id": "V0|C0", "edge_role_id": "edge:EA"},
+                    {"edge_id": "V0|C1", "edge_role_id": "edge:EA"},
+                ),
+            ),
+        },
+        graph_edge_records={
+            "V0|C0": GraphEdgeSemanticRecord(
+                edge_id="V0|C0",
+                graph_edge=("V0", "C0"),
+                edge_role_id="edge:EA",
+                path_type="V-E-C",
+                endpoint_node_ids=("V0", "C0"),
+                endpoint_role_ids=("node:VA", "node:CA"),
+                endpoint_pattern=("VA", "EA", "CA"),
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                ),
+                metadata={"target_point_by_node": {"V0": (0.0, 0.0, 0.0)}},
+            ),
+            "V0|C1": GraphEdgeSemanticRecord(
+                edge_id="V0|C1",
+                graph_edge=("V0", "C1"),
+                edge_role_id="edge:EA",
+                path_type="V-E-C",
+                endpoint_node_ids=("V0", "C1"),
+                endpoint_role_ids=("node:VA", "node:CA"),
+                endpoint_pattern=("VA", "EA", "CA"),
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                ),
+                metadata={"target_point_by_node": {"V0": (1.0, 1.0, 0.0)}},
+            ),
+        },
+        node_role_records={
+            "node:VA": NodeRoleRecord(
+                role_id="node:VA",
+                family_alias="VA",
+                role_class="V",
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "anchor_vector": (1.0, 0.0, 0.0)},
+                    {"attachment_index": 1, "slot_type": "XA", "anchor_vector": (0.0, 1.0, 0.0)},
+                ),
+            ),
+        },
+        edge_role_records={
+            "edge:EA": EdgeRoleRecord(
+                role_id="edge:EA",
+                family_alias="EA",
+                role_class="E",
+                endpoint_pattern=("VA", "EA", "CA"),
+                slot_rules=(
+                    {"attachment_index": 0, "slot_type": "XA", "endpoint_side": "V"},
+                ),
+            ),
+        },
+    )
+
+    with pytest.raises(ValueError, match="single legal correspondence is required"):
+        compile_local_rigid_initialization(semantic_snapshot, "V0")
 
 
 def test_get_rot_trans_matrix_uses_superimpose_result(monkeypatch):

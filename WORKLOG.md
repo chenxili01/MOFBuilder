@@ -431,3 +431,183 @@ notes:
 - Checkpoint: phase-2-executor-implemented
 - Status: COMPLETED_PENDING_PLANNER
 - Next step: Planner reviews completion and decides whether to advance
+
+
+## planner-run
+
+- Timestamp: 2026-03-14T20:26:33+00:00
+
+## Active Phase
+- Phase: 3
+- Name: SVD / Kabsch Local Rigid Initialization
+
+## Objective
+Implement a passive, deterministic node-local rigid initializer that consumes only the Phase 1 node placement contract and Phase 2 legal correspondences to compute a local pose for one representative fully coordinated case. The initializer must stay downstream of semantic legality, preserve the existing optimizer path, and avoid any builder, framework, or global-optimizer redesign.
+
+## Scope
+- `src/mofbuilder/core/optimizer.py`
+- `src/mofbuilder/core/optimizer_contract.py`
+- `src/mofbuilder/core/` new optimizer helper module for SVD/Kabsch initialization, if needed
+- `tests/test_core_optimizer.py`
+- `STATUS.md`
+
+## Tasks
+1. Add an optimizer-owned local rigid initialization surface that accepts a `NodePlacementContract` plus one legal correspondence and returns a deterministic pose result for a single node, with the source-anchor and target-anchor or direction representation made explicit in code.
+2. Implement the Phase 3 initializer with SVD/Kabsch only, using explicit local anchors or vectors from the node-local contract and explicit target anchors, vectors, or directions from the already-legal correspondence data, without introducing candidate scoring or ambiguity search.
+3. Expose the initializer passively from optimizer-owned code so it can be exercised directly in tests or via `NetOptimizer`, but do not wire it into `rotation_and_cell_optimization`, the broad global loop, refinement, guarded migration flags, or legacy-path replacement.
+4. Add tests for one representative fully coordinated legal case that verify deterministic rigid-pose compilation from legal correspondences only, and document the chosen target representation in those tests.
+
+## Validation
+- `python -m py_compile src/mofbuilder/core/optimizer_contract.py src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `python -m pytest tests/test_core_optimizer.py tests/test_core_runtime_snapshot.py`
+- Confirm the initializer runs only after legality is known and does not use geometry to decide legality.
+- Confirm no builder snapshot schema changes, framework changes, broad optimizer-loop changes, ambiguity scoring, refinement, or legacy-path behavior changes were introduced.
+
+## Non-goals
+- Discrete ambiguity handling across multiple legal candidates.
+- Geometry-based legality decisions or correspondence tie-breaking.
+- Local chemistry-aware refinement after SVD.
+- Builder, framework, FrameNet, or snapshot-schema changes.
+- Optional integration guard wiring or removal of the legacy optimizer path.
+
+## Exit Criteria
+- A passive local SVD/Kabsch initializer exists in optimizer-owned code and consumes only snapshot-derived node-local contract data plus legal correspondences.
+- The source/target anchor representation used by the initializer is explicit in code and covered by tests.
+- Tests cover one representative fully coordinated legal case and show deterministic rigid initialization without changing existing optimizer behavior.
+- `STATUS.md` is updated to Phase 3 executor-ready state and no forbidden modules are modified.
+
+## STATUS.md Update
+- Phase: Phase 3
+- Checkpoint: phase-3-plan-ready
+- Status: READY_FOR_EXECUTOR
+- Next step: Executor implements the active phase only
+
+
+## 2026-03-14 — executor — phase 3 local rigid initialization implementation
+
+branch:
+optimizer-reconstruction
+
+phase:
+Phase 3 — SVD / Kabsch Local Rigid Initialization
+
+checkpoint:
+phase-3-executor-implemented
+
+summary:
+- Added a passive optimizer-owned local rigid initialization helper that consumes only the node placement contract plus legal correspondences.
+- Implemented deterministic SVD/Kabsch pose compilation from explicit node-local slot anchors and explicit target anchors carried through compiled target-direction metadata.
+- Kept the legacy optimizer path and broad optimization loop unchanged; no integration wiring, ambiguity scoring, or refinement was added.
+
+files touched:
+- src/mofbuilder/core/optimizer_contract.py
+- src/mofbuilder/core/optimizer.py
+- tests/test_core_optimizer.py
+- WORKLOG.md
+- STATUS.md
+
+invariants checked:
+- Builder remains the owner of role interpretation and snapshot compilation.
+- Optimizer consumes snapshot-derived contract data only and does not inspect arbitrary builder internals.
+- Semantic legality remains upstream of SVD because the initializer requires a known legal correspondence.
+- Framework, graph grammar, graph state names, primitive-first ordering, and legacy optimizer behavior were not modified.
+- Null-edge semantics remain explicit and are carried only as metadata; this phase did not change null-edge behavior.
+
+validation:
+- `python -m py_compile src/mofbuilder/core/optimizer_contract.py src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `PYTHONPATH=src python -m pytest tests/test_core_optimizer.py -k 'local_rigid_initialization or legal_node_correspondences or placement_contract'` could not run because `pytest` is not installed in the active interpreter.
+- `PYTHONPATH=src python ...` import-level smoke validation could not run because `numpy` is not installed in the active interpreter.
+
+notes:
+- The chosen Phase 3 anchor representation is documented in code and tests: source anchors come from `slot_rules[*]['anchor_vector'|'anchor_point'|'anchor_position']`, and target anchors come from compiled `target_direction.metadata` target fields sourced from constraint or edge metadata.
+- The workflow references `SNAPSHOT_API_HANDOFF.md`, `OPTIMIZER_DISCUSSION_MEMORY.md`, and `OPTIMIZER_TODO_ROADMAP.md`, but those files are not present in this checkout.
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T20:35:00+00:00
+
+## Active Phase
+- Phase: 3
+- Name: SVD / Kabsch Local Rigid Initialization
+
+## Implemented
+- Added `RigidAnchorPair`, `NodeLocalRigidInitialization`, and `compile_local_rigid_initialization()` in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py).
+- Extended compiled target-direction metadata so Phase 3 can consume explicit target anchors from snapshot-derived constraint or edge metadata without changing snapshot schemas in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py).
+- Added passive `NetOptimizer.compile_local_rigid_initialization()` in [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py).
+- Added Phase 3 tests for one representative fully coordinated deterministic case and one multi-candidate rejection case in [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py).
+- Updated [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) and [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md).
+
+## Files Changed
+- `src/mofbuilder/core/optimizer_contract.py`
+- `src/mofbuilder/core/optimizer.py`
+- `tests/test_core_optimizer.py`
+- `WORKLOG.md`
+- `STATUS.md`
+
+## Validation
+- `python -m py_compile src/mofbuilder/core/optimizer_contract.py src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `PYTHONPATH=src python -m pytest tests/test_core_optimizer.py -k 'local_rigid_initialization or legal_node_correspondences or placement_contract'` could not run because `pytest` is not installed.
+- `PYTHONPATH=src python ...` import-level smoke validation could not run because `numpy` is not installed in the active interpreter.
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- Full Phase 3 validation still needs an environment with `pytest` and runtime deps such as `numpy`.
+- The current Phase 3 anchor extraction is intentionally narrow and test-documented; broader anchor/direction variants should be handled only in later planned phases if needed.
+
+## STATUS.md Update
+- Phase: Phase 3
+- Checkpoint: phase-3-executor-implemented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T20:31:54+00:00
+
+## Active Phase
+- Phase: 3
+- Name: SVD / Kabsch Local Rigid Initialization
+
+## Implemented
+- Added passive Phase 3 rigid-init result types and SVD/Kabsch initializer in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py#L163) and [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py#L617).
+- Extended compiled target-direction metadata so the initializer can consume explicit target anchors from snapshot-derived constraint or edge metadata in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py#L511).
+- Added passive `NetOptimizer.compile_local_rigid_initialization()` in [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py#L847).
+- Added Phase 3 tests for one deterministic fully coordinated case and one ambiguity-rejection case in [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py#L561).
+- Updated [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) and [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md).
+
+## Files Changed
+- `src/mofbuilder/core/optimizer_contract.py`
+- `src/mofbuilder/core/optimizer.py`
+- `tests/test_core_optimizer.py`
+- `WORKLOG.md`
+- `STATUS.md`
+
+## Validation
+- `python -m py_compile src/mofbuilder/core/optimizer_contract.py src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `PYTHONPATH=src python -m pytest ...` could not run because `pytest` is not installed in the active interpreter.
+- Import-level smoke execution could not run because `numpy` is not installed in the active interpreter.
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- Full Phase 3 runtime validation still needs an environment with `pytest` and `numpy`.
+- Anchor extraction is intentionally narrow and test-documented for the representative case; broader variants should wait for planned later phases.
+
+## STATUS.md Update
+- Phase: Phase 3
+- Checkpoint: phase-3-executor-implemented
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews completion and decides whether to advance
