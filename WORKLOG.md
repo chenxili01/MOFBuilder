@@ -782,3 +782,133 @@ notes:
 - Checkpoint: phase-5-plan-finalized
 - Status: COMPLETED_PENDING_PLANNER
 - Next step: Planner reviews Phase 5 completion and decides whether to advance
+
+
+## planner-run
+
+- Timestamp: 2026-03-14T10:27:43+00:00
+
+## Active Phase
+- Phase: 6
+- Name: Resolve Preparation
+
+## Objective
+Prepare builder-owned resolve scaffolding for the optional role-aware path in Phase 6 only. The executor should add passive runtime structures in the builder that derive resolve instructions, fragment lookup hints, null-edge handling rules, and provenance scaffolding from existing graph role ids, role registries, bundle data, and family metadata, while preserving the legacy single-role path and stopping before any actual resolve execution.
+
+## Scope
+- `src/mofbuilder/core/builder.py`
+- `tests/test_core_builder.py`
+- `STATUS.md`
+- `WORKLOG.md`
+
+## Tasks
+1. Audit the existing Phase 4 and Phase 5 builder state in `MetalOrganicFrameworkBuilder` and add explicit Phase 6 scaffolding containers on the builder for `resolve_instructions`, `fragment_lookup_map`, `null_edge_rules`, and `provenance_map` without changing the builder constructor signature or public workflow.
+2. Implement a builder-only preparation step in `src/mofbuilder/core/builder.py` that runs after role registries and `bundle_registry` are available, compiling passive resolve data from `self.G`, `node_role_registry`, `edge_role_registry`, `bundle_registry`, and `MofTopLibrary` metadata or canonical sidecar metadata.
+3. Define the prepared data narrowly: resolve entries should identify topology anchors, participating role ids, bundle ownership context for `C*` centers, configured resolve mode if present, and null-edge status; fragment lookup entries should surface family-provided lookup hints only; provenance scaffolding should reserve ownership-trace structure without mutating fragments or graph ownership.
+4. Preserve backward compatibility by keeping legacy/default-role families valid: if no role-aware metadata is present, the preparation step should still produce safe empty or default scaffolding and must not require role-aware inputs.
+5. Add focused builder tests covering one role-aware metadata case and one legacy/default case, proving the scaffolding is compiled deterministically and that no fragment data, optimizer inputs, or framework assembly behavior is modified in Phase 6.
+6. Update `WORKLOG.md` and `STATUS.md` at executor completion, and stop before any post-optimization resolve, fragment merge, optimizer consumption change, or framework/materialization change.
+
+## Validation
+- Targeted tests in `tests/test_core_builder.py` confirm `resolve_instructions`, `fragment_lookup_map`, `null_edge_rules`, and `provenance_map` are created from builder-owned state for a role-aware family.
+- Regression tests confirm legacy/default-role flows still normalize and do not require new role-aware metadata.
+- Self-review confirms no production modules outside `src/mofbuilder/core/builder.py` were modified.
+- Self-review confirms no fragment mutation, ownership transfer, geometry placement change, optimizer behavior change, or framework assembly change occurs in this phase.
+
+## Non-goals
+- No actual resolve execution, ownership transfer, fragment merging, or chemistry/materialization changes.
+- No changes to `src/mofbuilder/core/net.py`, optimizer, framework, supercell, linker, defects, termination, writer, or MD modules.
+- No new graph grammar beyond `V-E-V` and `V-E-C`.
+- No API redesign, constructor signature change, or mandatory migration of existing families.
+
+## Exit Criteria
+- Builder exposes populated passive Phase 6 resolve scaffolding structures derived from existing topology and metadata state.
+- The scaffolding preserves builder-owned role interpretation and `C*` bundle ownership boundaries without modifying fragments or graph ownership.
+- Legacy/default-role workflows remain functional.
+- Tests for the active phase pass, and the executor updates `STATUS.md` and `WORKLOG.md` without advancing to Phase 7.
+
+## STATUS.md Update
+- Phase: Phase 6
+- Checkpoint: phase-6-plan-finalized
+- Status: READY_FOR_EXECUTOR
+- Next step: Executor implements the active phase only
+
+---
+
+## 2026-03-14 — executor — phase 6 resolve preparation scaffolding
+
+branch:
+- mofbuilder-role-refactor
+
+phase:
+- Phase 6
+- Checkpoint: phase-6-plan-finalized
+
+summary:
+- Added passive builder-owned Phase 6 scaffolding containers in `MetalOrganicFrameworkBuilder` for `resolve_instructions`, `fragment_lookup_map`, `null_edge_rules`, and `provenance_map`.
+- Implemented builder-only resolve preparation helpers in `src/mofbuilder/core/builder.py` that derive deterministic resolve entries, fragment lookup hints, null-edge policies, and provenance placeholders from the active graph, role registries, bundle registry, and canonical family metadata without mutating fragments, graph ownership, optimizer inputs, or framework assembly.
+- Wired resolve preparation into `_read_net()` immediately after role registry initialization and bundle compilation so the scaffolding is available before optimization while preserving the legacy single-role path.
+- Added focused Phase 6 coverage in `tests/test_core_builder.py` for one canonical role-aware family and one legacy/default family, including deterministic resolve instruction ordering and inert legacy scaffolding.
+
+files touched:
+- src/mofbuilder/core/builder.py
+- tests/test_core_builder.py
+- WORKLOG.md
+- STATUS.md
+
+invariants checked:
+- Topology graph remained the source of truth; role ids continue to live on graph nodes and edges.
+- Builder retained role interpretation ownership; no framework, optimizer, linker, supercell, or fragment-resolution code was changed.
+- Bundle ownership remained on `C*` centers through bundle-context scaffolding only; no ownership transfer was executed.
+- Null edges remained explicit `E*` metadata-driven roles and were not collapsed into zero-length real edges.
+- Backward compatibility was preserved for legacy default-role flows by leaving the new scaffolding empty/default when canonical role metadata is absent.
+
+notes:
+- Validation run: `python -m py_compile src/mofbuilder/core/builder.py tests/test_core_builder.py`.
+- Validation blocked: `python -m pytest -q tests/test_core_builder.py -k 'resolve_scaffolding or read_net_keeps_bundle_registry_empty_for_legacy_default_role_graphs or compile_bundle_registry'` could not run because the environment lacks `pytest`.
+- Runtime imports are also blocked in this environment because project dependencies such as `numpy` are not installed.
+- No future-phase resolve execution, fragment merge, optimizer consumption changes, or framework assembly changes were added.
+
+
+## executor-run
+
+- Timestamp: 2026-03-14T10:33:55+00:00
+
+## Active Phase
+- Phase: 6
+- Name: Resolve Preparation
+
+## Implemented
+- Added passive Phase 6 builder scaffolding fields for `resolve_instructions`, `fragment_lookup_map`, `null_edge_rules`, and `provenance_map` in [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py#L147).
+- Implemented builder-only resolve preparation helpers that compile deterministic resolve entries, family fragment lookup hints, null-edge policy data, and provenance placeholders from graph role ids, registries, bundle data, and canonical metadata in [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py#L467).
+- Wired the preparation step into `_read_net()` after role registries and bundle compilation in [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/builder.py#L891).
+- Added Phase 6 coverage for one role-aware case and one legacy/default case in [test_core_builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_builder.py#L817).
+- Updated the phase handoff in [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md#L838) and [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md#L5).
+
+## Files Changed
+- `src/mofbuilder/core/builder.py`
+- `tests/test_core_builder.py`
+- `WORKLOG.md`
+- `STATUS.md`
+
+## Validation
+- Ran `python -m py_compile src/mofbuilder/core/builder.py tests/test_core_builder.py`.
+- Attempted `python -m pytest -q tests/test_core_builder.py -k 'resolve_scaffolding or read_net_keeps_bundle_registry_empty_for_legacy_default_role_graphs or compile_bundle_registry'`, but `pytest` is not installed.
+- Runtime imports are also blocked in this environment because project dependencies such as `numpy` are not installed.
+
+## Self-Review
+- Scope respected: yes
+- Future-phase leakage: no
+- Ownership preserved: yes
+- Backward compatibility preserved: yes
+- Checklist reviewed: yes
+
+## Risks / Follow-ups
+- Full behavioral validation is still pending in an environment with the repository’s Python test dependencies installed.
+- The new scaffolding is intentionally passive; no post-optimization resolve, ownership transfer, fragment mutation, or framework assembly propagation was added in this phase.
+
+## STATUS.md Update
+- Phase: Phase 6
+- Checkpoint: phase-6-plan-finalized
+- Status: COMPLETED_PENDING_PLANNER
+- Next step: Planner reviews Phase 6 completion and decides whether to advance

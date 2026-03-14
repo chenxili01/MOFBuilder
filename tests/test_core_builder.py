@@ -815,6 +815,148 @@ def test_compile_bundle_registry_builds_multiple_deterministic_bundles():
 
 
 @pytest.mark.core
+def test_prepare_resolve_scaffolding_compiles_role_aware_builder_state():
+    builder = MetalOrganicFrameworkBuilder(mof_family="TEST-MULTI")
+    canonical_metadata = _canonical_family_role_metadata()
+    builder.mof_top_library.role_metadata = {
+        "schema": "mof_topology_role_metadata/v1",
+        "canonical_role_metadata": canonical_metadata,
+        "node_roles": [
+            {
+                "role_id": "node:VA",
+                "expected_connectivity": 4,
+                "topology_labels": ["VA"],
+            },
+            {
+                "role_id": "node:CA",
+                "expected_connectivity": 2,
+                "topology_labels": ["CA"],
+            },
+        ],
+        "edge_roles": [
+            {
+                "role_id": "edge:EA",
+                "linker_connectivity": 4,
+                "topology_labels": ["EA"],
+            },
+            {
+                "role_id": "edge:EB",
+                "linker_connectivity": 4,
+                "topology_labels": ["EB"],
+            },
+        ],
+    }
+    builder.mof_top_library.canonical_role_metadata = canonical_metadata
+    builder.role_metadata = builder.mof_top_library.role_metadata
+    builder.node_connectivity = 4
+    builder.linker_connectivity = 4
+    builder.node_metal = "Zn"
+    builder.linker_xyzfile = "tests/database/example_linker.xyz"
+    builder.G = nx.Graph()
+    builder.G.add_node("V0", node_role_id="node:VA")
+    builder.G.add_node("V1", node_role_id="node:VA")
+    builder.G.add_node(
+        "C0",
+        node_role_id="node:CA",
+        cyclic_edge_order=[("V0", "C0"), ("V1", "C0")],
+    )
+    builder.G.add_edge(
+        "V0",
+        "C0",
+        edge_role_id="edge:EA",
+        slot_index={"V0": 0, "C0": 0},
+    )
+    builder.G.add_edge(
+        "V1",
+        "C0",
+        edge_role_id="edge:EA",
+        slot_index={"V1": 0, "C0": 1},
+    )
+    builder.G.add_edge(
+        "V0",
+        "V1",
+        edge_role_id="edge:EB",
+        slot_index={"V0": 1, "V1": 1},
+    )
+
+    builder._initialize_role_registries()
+    builder._compile_bundle_registry()
+    builder._prepare_resolve_scaffolding()
+
+    assert list(builder.fragment_lookup_map) == [
+        "node:CA",
+        "node:VA",
+        "edge:EA",
+        "edge:EB",
+    ]
+    assert builder.fragment_lookup_map["edge:EB"]["lookup_hint"] == {
+        "library": "family_metadata",
+        "fragment_kind": "null_edge",
+    }
+    assert builder.null_edge_rules == {
+        "policy": {
+            "default_action": "error",
+            "allowed_null_fallback_edge_aliases": ["EB"],
+        },
+        "roles": {
+            "edge:EA": {
+                "role_id": "edge:EA",
+                "role_alias": "EA",
+                "edge_kind": "real",
+                "null_payload_model": None,
+                "allows_unresolved_null_fallback": False,
+            },
+            "edge:EB": {
+                "role_id": "edge:EB",
+                "role_alias": "EB",
+                "edge_kind": "null",
+                "null_payload_model": "duplicated_zero_length_anchors",
+                "allows_unresolved_null_fallback": True,
+            },
+        },
+    }
+    assert [entry["instruction_id"] for entry in builder.resolve_instructions] == [
+        "resolve:V0|C0|edge:EA",
+        "resolve:V0|V1|edge:EB",
+        "resolve:V1|C0|edge:EA",
+    ]
+    assert builder.resolve_instructions[0] == {
+        "instruction_id": "resolve:V0|C0|edge:EA",
+        "graph_edge": ("V0", "C0"),
+        "path_type": "V-E-C",
+        "edge_role_id": "edge:EA",
+        "node_role_ids": {
+            "V0": "node:VA",
+            "C0": "node:CA",
+        },
+        "slot_index": {"V0": 0, "C0": 0},
+        "bundle_id": "bundle:C0",
+        "bundle_owner_node": "C0",
+        "bundle_owner_role_id": "node:CA",
+        "resolve_mode": "ownership_transfer",
+        "edge_kind": "real",
+        "is_null_edge": False,
+        "null_payload_model": None,
+        "allows_unresolved_null_fallback": False,
+    }
+    assert builder.resolve_instructions[1]["path_type"] == "V-E-V"
+    assert builder.resolve_instructions[1]["resolve_mode"] == "alignment_only"
+    assert builder.resolve_instructions[1]["is_null_edge"] is True
+    assert builder.resolve_instructions[1]["bundle_id"] is None
+    assert builder.provenance_map["resolve:V0|C0|edge:EA"] == {
+        "instruction_id": "resolve:V0|C0|edge:EA",
+        "graph_edge": ("V0", "C0"),
+        "status": "prepared",
+        "bundle_id": "bundle:C0",
+        "pending_owner_role_id": "node:CA",
+        "resolve_mode": "ownership_transfer",
+        "transfer_committed": False,
+        "ownership_history": [],
+    }
+    assert builder.provenance_map["resolve:V0|V1|edge:EB"]["bundle_id"] is None
+
+
+@pytest.mark.core
 def test_read_net_keeps_bundle_registry_empty_for_legacy_default_role_graphs(
     monkeypatch,
 ):
@@ -855,5 +997,15 @@ def test_read_net_keeps_bundle_registry_empty_for_legacy_default_role_graphs(
     builder._read_net()
 
     assert builder.bundle_registry == {}
+    assert builder.resolve_instructions == []
+    assert builder.fragment_lookup_map == {}
+    assert builder.null_edge_rules == {
+        "policy": {
+            "default_action": "error",
+            "allowed_null_fallback_edge_aliases": [],
+        },
+        "roles": {},
+    }
+    assert builder.provenance_map == {}
     assert list(builder.node_role_registry) == ["node:default"]
     assert list(builder.edge_role_registry) == ["edge:default"]

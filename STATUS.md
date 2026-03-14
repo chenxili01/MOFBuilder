@@ -2,10 +2,10 @@
 
 ## Workflow Status
 
-- Phase: Phase 5
-- Checkpoint: phase-5-plan-finalized
+- Phase: Phase 6
+- Checkpoint: phase-6-plan-finalized
 - Status: COMPLETED_PENDING_PLANNER
-- Next step: Planner reviews Phase 5 completion and decides whether to advance
+- Next step: Planner reviews Phase 6 completion and decides whether to advance
 - Last update: 2026-03-14
 
 ## Branch
@@ -18,7 +18,7 @@ Implement the role-based topology semantics defined in `ROUND1_CHECKPOINT.md` an
 
 ## Current Focus
 
-Phase 5 executor work is complete. The builder now compiles a builder-owned `bundle_registry` from graph-stored `C*` centers and incident `E*` edges using FrameNet-provided `cyclic_edge_order`, preserves the legacy single-role path by leaving legacy graphs with an empty registry, and stops before optimizer, framework, resolve, or fragment-resolution changes.
+Phase 6 planning is complete. The next step is executor-only implementation of builder-owned resolve preparation: add passive resolve scaffolding structures for resolve instructions, fragment lookup hints, null-edge policy handling, and provenance preparation using existing graph role ids, registries, bundle data, and family metadata, while stopping before optimizer changes, fragment mutation, ownership transfer, or framework assembly changes.
 
 ## Invariants
 

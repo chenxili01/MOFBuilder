@@ -147,6 +147,10 @@ class MetalOrganicFrameworkBuilder:
         self.node_role_registry = {}
         self.edge_role_registry = {}
         self.bundle_registry = {}
+        self.resolve_instructions = []
+        self.fragment_lookup_map = {}
+        self.null_edge_rules = {}
+        self.provenance_map = {}
 
         #need to be set by user
         self.linker_xyzfile = None  #can be set directly
@@ -460,6 +464,243 @@ class MetalOrganicFrameworkBuilder:
             return {"kind": "xyzfile", "value": self.linker_xyzfile}
         return {"kind": None, "value": None}
 
+    def _get_canonical_role_metadata(self):
+        canonical_metadata = getattr(
+            self.mof_top_library,
+            "canonical_role_metadata",
+            None,
+        )
+        if canonical_metadata:
+            return canonical_metadata
+
+        role_metadata = self.role_metadata or {}
+        canonical_metadata = role_metadata.get("canonical_role_metadata")
+        if canonical_metadata:
+            return canonical_metadata
+
+        return {}
+
+    def _get_role_alias(self, role_id):
+        normalized_role_id = str(role_id or "").strip()
+        if ":" in normalized_role_id:
+            return normalized_role_id.split(":", 1)[1]
+        return normalized_role_id
+
+    def _get_role_prefix(self, role_id):
+        role_alias = self._get_role_alias(role_id)
+        return role_alias[:1] if role_alias else ""
+
+    def _has_role_aware_graph(self):
+        if self.G is None:
+            return False
+
+        for _, node_data in self.G.nodes(data=True):
+            role_id = self._normalize_runtime_role_id(
+                node_data.get("node_role_id"),
+                namespace="node",
+            )
+            if role_id != "node:default":
+                return True
+
+        for edge in self.G.edges():
+            role_id = self._normalize_runtime_role_id(
+                self.G.edges[edge].get("edge_role_id"),
+                namespace="edge",
+            )
+            if role_id != "edge:default":
+                return True
+
+        return False
+
+    def _compile_fragment_lookup_map(self, canonical_metadata):
+        fragment_lookup_map = {}
+        fragment_lookup_hints = canonical_metadata.get("fragment_lookup_hints", {})
+
+        for namespace, registry in (
+            ("node", self.node_role_registry),
+            ("edge", self.edge_role_registry),
+        ):
+            for role_id in sorted(registry):
+                role_alias = self._get_role_alias(role_id)
+                lookup_hint = fragment_lookup_hints.get(role_alias)
+                if lookup_hint is None:
+                    continue
+                fragment_lookup_map[role_id] = {
+                    "role_id": role_id,
+                    "role_alias": role_alias,
+                    "role_namespace": namespace,
+                    "lookup_hint": dict(lookup_hint),
+                }
+
+        return fragment_lookup_map
+
+    def _compile_null_edge_rules(self, canonical_metadata):
+        if not canonical_metadata:
+            return {
+                "policy": {
+                    "default_action": "error",
+                    "allowed_null_fallback_edge_aliases": [],
+                },
+                "roles": {},
+            }
+
+        unresolved_edge_policy = canonical_metadata.get("unresolved_edge_policy", {})
+        allowed_null_fallback = [
+            str(edge_alias)
+            for edge_alias in unresolved_edge_policy.get(
+                "allowed_null_fallback_edge_aliases",
+                [],
+            )
+        ]
+        edge_kind_rules = canonical_metadata.get("edge_kind_rules", {})
+        role_rules = {}
+
+        for role_id in sorted(self.edge_role_registry):
+            role_alias = self._get_role_alias(role_id)
+            edge_kind_rule = edge_kind_rules.get(role_alias, {})
+            role_rules[role_id] = {
+                "role_id": role_id,
+                "role_alias": role_alias,
+                "edge_kind": edge_kind_rule.get("edge_kind", "real"),
+                "null_payload_model": edge_kind_rule.get("null_payload_model"),
+                "allows_unresolved_null_fallback": role_alias in allowed_null_fallback,
+            }
+
+        return {
+            "policy": {
+                "default_action": unresolved_edge_policy.get("default_action", "error"),
+                "allowed_null_fallback_edge_aliases": allowed_null_fallback,
+            },
+            "roles": role_rules,
+        }
+
+    def _compile_resolve_instructions(self, canonical_metadata, null_edge_rules):
+        if self.G is None:
+            return []
+
+        resolve_rules = canonical_metadata.get("resolve_rules", {})
+        instructions = []
+
+        for edge in sorted(self.G.edges(), key=lambda item: tuple(str(value) for value in item)):
+            edge_data = self.G.edges[edge]
+            edge_role_id = self._normalize_runtime_role_id(
+                edge_data.get("edge_role_id"),
+                namespace="edge",
+            )
+            endpoint_role_ids = {
+                node_name: self._normalize_runtime_role_id(
+                    self.G.nodes[node_name].get("node_role_id"),
+                    namespace="node",
+                )
+                for node_name in edge
+            }
+            node_prefixes = {
+                node_name: self._get_role_prefix(role_id)
+                for node_name, role_id in endpoint_role_ids.items()
+            }
+            center_nodes = [
+                node_name
+                for node_name, prefix in node_prefixes.items()
+                if prefix == "C"
+            ]
+            bundle_owner_node = center_nodes[0] if len(center_nodes) == 1 else None
+            bundle_id = (
+                f"bundle:{bundle_owner_node}"
+                if bundle_owner_node is not None
+                and f"bundle:{bundle_owner_node}" in self.bundle_registry
+                else None
+            )
+            rule = null_edge_rules.get("roles", {}).get(
+                edge_role_id,
+                {
+                    "edge_kind": "real",
+                    "null_payload_model": None,
+                    "allows_unresolved_null_fallback": False,
+                },
+            )
+            edge_role_alias = self._get_role_alias(edge_role_id)
+            path_type = "-".join(
+                [node_prefixes.get(edge[0], "?"), "E", node_prefixes.get(edge[1], "?")]
+            )
+            instruction_id = (
+                f"resolve:{str(edge[0])}|{str(edge[1])}|{edge_role_id}"
+            )
+
+            instructions.append(
+                {
+                    "instruction_id": instruction_id,
+                    "graph_edge": tuple(edge),
+                    "path_type": path_type,
+                    "edge_role_id": edge_role_id,
+                    "node_role_ids": endpoint_role_ids,
+                    "slot_index": dict(edge_data["slot_index"])
+                    if isinstance(edge_data.get("slot_index"), dict)
+                    else edge_data.get("slot_index"),
+                    "bundle_id": bundle_id,
+                    "bundle_owner_node": bundle_owner_node,
+                    "bundle_owner_role_id": endpoint_role_ids.get(bundle_owner_node),
+                    "resolve_mode": resolve_rules.get(edge_role_alias, {}).get(
+                        "resolve_mode"
+                    ),
+                    "edge_kind": rule.get("edge_kind", "real"),
+                    "is_null_edge": rule.get("edge_kind", "real") == "null",
+                    "null_payload_model": rule.get("null_payload_model"),
+                    "allows_unresolved_null_fallback": rule.get(
+                        "allows_unresolved_null_fallback",
+                        False,
+                    ),
+                }
+            )
+
+        return instructions
+
+    def _compile_provenance_map(self, resolve_instructions):
+        provenance_map = {}
+        for instruction in resolve_instructions:
+            provenance_map[instruction["instruction_id"]] = {
+                "instruction_id": instruction["instruction_id"],
+                "graph_edge": instruction["graph_edge"],
+                "status": "prepared",
+                "bundle_id": instruction["bundle_id"],
+                "pending_owner_role_id": instruction["bundle_owner_role_id"],
+                "resolve_mode": instruction["resolve_mode"],
+                "transfer_committed": False,
+                "ownership_history": [],
+            }
+        return provenance_map
+
+    def _prepare_resolve_scaffolding(self):
+        self.resolve_instructions = []
+        self.fragment_lookup_map = {}
+        self.null_edge_rules = {
+            "policy": {
+                "default_action": "error",
+                "allowed_null_fallback_edge_aliases": [],
+            },
+            "roles": {},
+        }
+        self.provenance_map = {}
+
+        if self.G is None:
+            return
+
+        canonical_metadata = self._get_canonical_role_metadata()
+        self.fragment_lookup_map = self._compile_fragment_lookup_map(
+            canonical_metadata
+        )
+        self.null_edge_rules = self._compile_null_edge_rules(canonical_metadata)
+
+        if not canonical_metadata and not self._has_role_aware_graph():
+            return
+
+        self.resolve_instructions = self._compile_resolve_instructions(
+            canonical_metadata,
+            self.null_edge_rules,
+        )
+        self.provenance_map = self._compile_provenance_map(
+            self.resolve_instructions
+        )
+
     def _compile_bundle_registry(self):
         self.bundle_registry = {}
         if self.G is None:
@@ -650,6 +891,7 @@ class MetalOrganicFrameworkBuilder:
         self.net_pair_vertex_edge = self.frame_net.pair_vertex_edge
         self._initialize_role_registries()
         self._compile_bundle_registry()
+        self._prepare_resolve_scaffolding()
 
     def _read_linker(self):
         self.frame_linker.linker_connectivity = self.linker_connectivity
