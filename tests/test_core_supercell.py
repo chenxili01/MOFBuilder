@@ -176,3 +176,27 @@ def test_edgegraph_preserves_roles_through_cleave_with_role_specific_xoo_layouts
         ("VA_[0. 0. 0.]", 1, edge_name),
         ("VB_[0. 0. 0.]", 0, edge_name),
     }
+
+
+def test_addxoo2edge_multitopic_skips_matching_when_connected_vnodes_have_no_x_atoms():
+    builder = EdgeGraphBuilder()
+    eG = nx.Graph()
+    eG.add_node("V_0",
+                f_points=np.array([["C1", "C", 0.2, 0.0, 0.0],
+                                   ["O1", "O", 0.2, 0.1, 0.0]],
+                                  dtype=object))
+    eG.add_node("V_1",
+                f_points=np.array([["C1", "C", 0.8, 0.0, 0.0],
+                                   ["O1", "O", 0.8, -0.1, 0.0]],
+                                  dtype=object))
+    eG.add_node("EDGE_0", f_points=_make_edge_f_points(0.3, 0.7))
+    eG.add_edge("V_0", "EDGE_0")
+    eG.add_edge("V_1", "EDGE_0")
+
+    out_eG, unsaturated, matched, xoo_dict = builder._addxoo2edge_multitopic(
+        eG, np.eye(3))
+
+    assert unsaturated == []
+    assert matched == []
+    assert xoo_dict == {}
+    assert out_eG.nodes["EDGE_0"]["xoo_f_points"].shape == (0, 5)

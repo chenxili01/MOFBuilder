@@ -160,3 +160,37 @@ def test_writer_resolves_role_specific_dummy_and_xoo_metadata():
     assert w.residues_info["METAL"] == 1
     assert w.residues_info["HO"] == 1
     assert w.residues_info["O"] == 1
+
+
+def test_get_merged_data_skips_incompatible_flat_dummy_atom_layouts():
+    w = MofWriter()
+    g = nx.Graph()
+    g.add_node("VA_0", node_role_id="node:default")
+    g.add_node("VA_1", node_role_id="node:default")
+
+    compatible_node = np.array([
+        ["Zr", "Zr", 1, "OLD", 1, 0.0, 0.0, 0.0, 0, 0.0, ""],
+    ], dtype=object)
+    incompatible_node = np.array([
+        ["Zr", "Zr", 1, "OLD", 2, 0.0, 0.0, 0.0, 0, 0.0, ""],
+        ["O", "O", 2, "OLD", 2, 1.0, 0.0, 0.0, 0, 0.0, ""],
+        ["H", "H", 3, "OLD", 2, 1.1, 0.0, 0.0, 0, 0.0, ""],
+    ], dtype=object)
+
+    w.nodes_data = [compatible_node, incompatible_node]
+    w.node_names = ["VA_0", "VA_1"]
+    w.edges_data = []
+    w.terms_data = []
+    w.cG = g
+
+    merged = w.get_merged_data({
+        "METAL_count": 1,
+        "dummy_res_len": 1,
+        "HHO_count": 0,
+        "HO_count": 0,
+        "O_count": 0,
+    })
+
+    assert list(merged[:, 3]) == ["METAL_1", "OLD", "OLD", "OLD"]
+    assert w.residues_info["METAL"] == 1
+    assert w.residues_info[";NODE"] == 2

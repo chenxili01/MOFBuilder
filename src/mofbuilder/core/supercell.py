@@ -875,6 +875,8 @@ class EdgeGraphBuilder:
             eG.nodes[n]["xoo_f_points"] = np.zeros((0, 5))
             Xs_edge_indices, Xs_edge_fpoints = fetch_X_atoms_ind_array(
                 eG.nodes[n]["f_points"], 0, "X")
+            if len(Xs_edge_indices) == 0:
+                continue
             Xs_edge_ccpoints = np.hstack((
                 Xs_edge_fpoints[:, 0:2],
                 np.dot(sc_unit_cell, Xs_edge_fpoints[:,
@@ -909,6 +911,12 @@ class EdgeGraphBuilder:
                     all_Xs_vnodes_ind.append([v, ind, n])
                 all_Xs_vnodes_ccpoints = np.vstack(
                     (all_Xs_vnodes_ccpoints, Xs_vnode_ccpoints))
+            if all_Xs_vnodes_ccpoints.shape[0] == 0:
+                if self._debug:
+                    self.ostream.print_warning(
+                        "no X atoms found on connected V nodes for edge", n)
+                    self.ostream.flush()
+                continue
             edgeX_vnodeX_dist_matrix = np.zeros(
                 (len(Xs_edge_ccpoints), len(all_Xs_vnodes_ccpoints)))
             for i in range(len(Xs_edge_ccpoints)):

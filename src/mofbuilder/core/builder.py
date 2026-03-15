@@ -2548,16 +2548,42 @@ class MetalOrganicFrameworkBuilder:
         self.net_optimizer.cell_info = self.net_cell_info
         self.net_optimizer.V_data = self.frame_nodes.node_data
         self.net_optimizer.V_X_data = self.frame_nodes.node_X_data
+        self.net_optimizer.V_attachment_data_by_type = dict(
+            self.node_attachment_data_by_type
+        )
+        self.net_optimizer.V_attachment_coords_by_type = dict(
+            self.node_attachment_coords_by_type
+        )
         if self.frame_net.linker_connectivity > 2:
             self.net_optimizer.EC_data = self.frame_linker.linker_center_data
             self.net_optimizer.EC_X_data = self.frame_linker.linker_center_X_data
+            self.net_optimizer.EC_attachment_data_by_type = dict(
+                self.linker_center_attachment_data_by_type
+            )
+            self.net_optimizer.EC_attachment_coords_by_type = dict(
+                self.linker_center_attachment_coords_by_type
+            )
             self.net_optimizer.E_data = self.linker_outer_data
             self.net_optimizer.E_X_data = self.linker_outer_X_data
+            self.net_optimizer.E_attachment_data_by_type = dict(
+                self.linker_outer_attachment_data_by_type
+            )
+            self.net_optimizer.E_attachment_coords_by_type = dict(
+                self.linker_outer_attachment_coords_by_type
+            )
         else:
             self.net_optimizer.E_data = self.frame_linker.linker_center_data
             self.net_optimizer.E_X_data = self.frame_linker.linker_center_X_data
+            self.net_optimizer.E_attachment_data_by_type = dict(
+                self.linker_center_attachment_data_by_type
+            )
+            self.net_optimizer.E_attachment_coords_by_type = dict(
+                self.linker_center_attachment_coords_by_type
+            )
             self.net_optimizer.EC_data = None
             self.net_optimizer.EC_X_data = None
+            self.net_optimizer.EC_attachment_data_by_type = {}
+            self.net_optimizer.EC_attachment_coords_by_type = {}
         self.net_optimizer.constant_length = self.constant_length
         self.net_optimizer.sorted_nodes = self.frame_net.sorted_nodes
         self.net_optimizer.sorted_edges = self.frame_net.sorted_edges

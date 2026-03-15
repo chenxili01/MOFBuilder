@@ -328,13 +328,16 @@ class MofWriter:
         if dummy_atom_node_dict is not None:
             if not node_names and self._is_dummy_atom_layout_dict(
                     dummy_atom_node_dict):
-                self.residues_info['METAL'] = nodes_number * dummy_atom_node_dict.get(
+                renamed_nodes_number = sum(
+                    self._expected_dummy_atom_count(dummy_atom_node_dict) ==
+                    len(node_data) for node_data in self.nodes_data)
+                self.residues_info['METAL'] = renamed_nodes_number * dummy_atom_node_dict.get(
                     'METAL_count', 0)
-                self.residues_info['HHO'] = nodes_number * dummy_atom_node_dict.get(
+                self.residues_info['HHO'] = renamed_nodes_number * dummy_atom_node_dict.get(
                     'HHO_count', 0)
-                self.residues_info['HO'] = nodes_number * dummy_atom_node_dict.get(
+                self.residues_info['HO'] = renamed_nodes_number * dummy_atom_node_dict.get(
                     'HO_count', 0)
-                self.residues_info['O'] = nodes_number * dummy_atom_node_dict.get(
+                self.residues_info['O'] = renamed_nodes_number * dummy_atom_node_dict.get(
                     'O_count', 0)
             else:
                 for index, node_name in enumerate(node_names):
@@ -343,6 +346,9 @@ class MofWriter:
                     node_dummy_atom_dict = self._resolve_node_dummy_atom_dict(
                         node_graph, node_name, dummy_atom_node_dict)
                     if node_dummy_atom_dict is None:
+                        continue
+                    if self._expected_dummy_atom_count(node_dummy_atom_dict) != len(
+                            self.nodes_data[index]):
                         continue
                     self.residues_info['METAL'] = self.residues_info.get(
                         'METAL', 0) + node_dummy_atom_dict.get(
@@ -601,30 +607,117 @@ class MofWriter:
         """Rename dummy atom names in nodes_data using dummy_atom_node_dict; return stacked array with METAL, HHO, HO, O order."""
         if dummy_atom_node_dict is None:
             return np.vstack(nodes_data)
+        if len(nodes_data) == 0:
+            return np.empty((0, 11))
+
+        nodes_num = len(nodes_data)
+        expected_atoms_per_node = self._expected_dummy_atom_count(
+            dummy_atom_node_dict)
+
+        if all(
+                len(node_data) == expected_atoms_per_node
+                for node_data in nodes_data):
+            return self._rename_node_name_bulk(nodes_data,
+                                               dummy_atom_node_dict)
+
+        if self._debug:
+            self.ostream.print_info(
+                "Dummy atom layout does not match every node; falling back "
+                "to per-node renaming for compatible nodes only.")
+            self.ostream.print_info(
+                f"dummy node split dict: {dummy_atom_node_dict}")
+            self.ostream.print_info(
+                "node atom counts: "
+                f"{[len(node_data) for node_data in nodes_data]}")
+            self.ostream.flush()
+
+        renamed_nodes = [
+            self._rename_single_node_name(node_data, dummy_atom_node_dict)
+            for node_data in nodes_data
+        ]
+        return np.vstack(renamed_nodes) if renamed_nodes else np.empty((0, 11))
+
+    def _expected_dummy_atom_count(
+        self,
+        dummy_atom_node_dict: Dict[str, Any],
+    ) -> int:
+        metal_count = dummy_atom_node_dict["METAL_count"]
+        dummy_res_len = int(dummy_atom_node_dict["dummy_res_len"])
+        hho_count = dummy_atom_node_dict["HHO_count"]
+        ho_count = dummy_atom_node_dict["HO_count"]
+        o_count = dummy_atom_node_dict["O_count"]
+        return metal_count * dummy_res_len + hho_count * 3 + ho_count * 2 + o_count
+
+    def _build_dummy_atom_name_list(
+        self,
+        dummy_atom_node_dict: Dict[str, Any],
+    ) -> List[str]:
+        metal_count = dummy_atom_node_dict["METAL_count"]
+        dummy_res_len = int(dummy_atom_node_dict["dummy_res_len"])
+        hho_count = dummy_atom_node_dict["HHO_count"]
+        ho_count = dummy_atom_node_dict["HO_count"]
+        o_count = dummy_atom_node_dict["O_count"]
+        residue_specs = ([("METAL", dummy_res_len)] * metal_count +
+                         [("HHO", 3)] * hho_count + [("HO", 2)] * ho_count +
+                         [("O", 1)] * o_count)
+        return [
+            f"{name}_{i+1}" for i, (name, count) in enumerate(residue_specs)
+            for _ in range(count)
+        ]
+
+    def _rename_single_node_name(
+        self,
+        node_data: np.ndarray,
+        dummy_atom_node_dict: Dict[str, Any],
+    ) -> np.ndarray:
+        expected_atoms_per_node = self._expected_dummy_atom_count(
+            dummy_atom_node_dict)
+        if len(node_data) != expected_atoms_per_node:
+            return node_data
+
+        metal_count = dummy_atom_node_dict["METAL_count"]
+        dummy_res_len = int(dummy_atom_node_dict["dummy_res_len"])
+        hho_count = dummy_atom_node_dict["HHO_count"]
+        ho_count = dummy_atom_node_dict["HO_count"]
+        metal_num = metal_count * dummy_res_len
+        hho_num = hho_count * 3
+        ho_num = ho_count * 2
+
+        name_col = np.asarray(
+            self._build_dummy_atom_name_list(dummy_atom_node_dict),
+            dtype=object).reshape(-1, 1)
+        rename_data = np.hstack((node_data[:, 0:3], name_col, node_data[:, 4:]))
+        rename_data = rename_data.reshape(1, -1, 11)
+        metals_data = np.vstack(
+            rename_data[:, :metal_num, :]) if metal_num > 0 else np.empty(
+                (0, 11))
+        hhos_data = np.vstack(
+            rename_data[:, metal_num:metal_num +
+                        hho_num, :]) if hho_num > 0 else np.empty((0, 11))
+        hos_data = np.vstack(
+            rename_data[:, metal_num + hho_num:metal_num + hho_num +
+                        ho_num, :]) if ho_num > 0 else np.empty((0, 11))
+        os_data = np.vstack(
+            rename_data[:, metal_num + hho_num + ho_num:, :])
+        return np.vstack((metals_data, hhos_data, hos_data, os_data))
+
+    def _rename_node_name_bulk(
+        self,
+        nodes_data: List[np.ndarray],
+        dummy_atom_node_dict: Dict[str, Any],
+    ) -> np.ndarray:
         nodes_num = len(nodes_data)
         metal_count = dummy_atom_node_dict["METAL_count"]
         dummy_res_len = int(dummy_atom_node_dict["dummy_res_len"])
         hho_count = dummy_atom_node_dict["HHO_count"]
         ho_count = dummy_atom_node_dict["HO_count"]
         o_count = dummy_atom_node_dict["O_count"]
-        #number for slice
         metal_num = metal_count * dummy_res_len
         hho_num = hho_count * 3
         ho_num = ho_count * 2
         o_num = o_count * 1
 
-        # generate new_name_list for all dummy atoms in order
-        # For each residue, repeat the name for the number of atoms in that residue, incrementing the residue index
-        # Build tuples of (name, count) for each residue type
-        residue_specs = ([("METAL", dummy_res_len)] * metal_count +
-                         [("HHO", 3)] * hho_count + [("HO", 2)] * ho_count +
-                         [("O", 1)] * o_count)
-
-        # Use list comprehension with enumerate for fast generation
-        new_name_list = [
-            f"{name}_{i+1}" for i, (name, count) in enumerate(residue_specs)
-            for _ in range(count)
-        ]
+        new_name_list = self._build_dummy_atom_name_list(dummy_atom_node_dict)
         nodes_data = np.vstack(nodes_data)
         if self._debug:
             self.ostream.print_info(
@@ -633,11 +726,8 @@ class MofWriter:
             self.ostream.flush()
 
         name_col = np.tile(new_name_list, nodes_num).reshape(-1, 1)
-        #hstack the new_name_col to the stacked array, replacing the original name column
         rename_data = np.hstack((nodes_data[:, 0:3], name_col, nodes_data[:,
                                                                           4:]))
-        #reshape the rename_data to a list of arrays for each node
-        #reorder the atoms in each node to METAL, HHO, HO, O
         rename_data = rename_data.reshape(nodes_num, -1, 11)
         metals_data = np.vstack(
             rename_data[:, :metal_num, :]) if metal_num > 0 else np.empty(
@@ -651,9 +741,7 @@ class MofWriter:
         os_data = np.vstack(
             rename_data[:, metal_num + hho_num +
                         ho_num:, :]) if o_num > 0 else np.empty((0, 11))
-        ordered_data = np.vstack((metals_data, hhos_data, hos_data, os_data))
-
-        return ordered_data
+        return np.vstack((metals_data, hhos_data, hos_data, os_data))
 
 
 #################below are from display.py######################

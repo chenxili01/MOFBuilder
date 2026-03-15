@@ -57,10 +57,16 @@ class NetOptimizer:
         self.G = None
         self.V_data = None
         self.V_X_data = None
+        self.V_attachment_data_by_type = {}
+        self.V_attachment_coords_by_type = {}
         self.EC_data = None
         self.EC_X_data = None
+        self.EC_attachment_data_by_type = {}
+        self.EC_attachment_coords_by_type = {}
         self.E_data = None
         self.E_X_data = None
+        self.E_attachment_data_by_type = {}
+        self.E_attachment_coords_by_type = {}
         self.node_role_registry = None
         self.edge_role_registry = None
         self.sorted_nodes = None
@@ -985,24 +991,39 @@ class NetOptimizer:
                                       data,
                                       x_data,
                                       *,
+                                      attachment_data_by_type=None,
                                       attachment_coords_by_type=None,
                                       linker_frag_length=None,
                                       fake_edge=False):
+        normalized_attachment_coords = self._resolve_attachment_coords_by_type(
+            attachment_coords_by_type=attachment_coords_by_type,
+            attachment_data_by_type=attachment_data_by_type,
+            fallback_x_data=x_data,
+        )
+        x_coords = self._flatten_attachment_coords(normalized_attachment_coords)
         assert_msg_critical(
-            data is not None and x_data is not None,
-            "Optimizer fragment payload is missing atom or X-atom data.")
-        x_coords = x_data[:, 5:8].astype(float)
+            data is not None and x_coords is not None and x_coords.shape[0] > 0,
+            "Optimizer fragment payload is missing atom or attachment coordinate data.")
         return {
             "atom": data[:, 0:2],
             "coords": data[:, 5:8].astype(float),
             "x_coords": x_coords,
-            "attachment_coords_by_type": self._normalize_attachment_coords_by_type(
-                attachment_coords_by_type,
-                fallback_x_coords=x_coords,
-            ),
+            "attachment_coords_by_type": normalized_attachment_coords,
             "linker_frag_length": linker_frag_length,
             "fake_edge": fake_edge,
         }
+
+    def _extract_attachment_coords_from_data_by_type(self, attachment_data_by_type):
+        coords_by_type = {}
+        for atom_type, rows in (attachment_data_by_type or {}).items():
+            if rows is None:
+                continue
+            array = np.asarray(rows, dtype=object)
+            if array.size == 0:
+                coords_by_type[str(atom_type)] = np.empty((0, 3), dtype=float)
+                continue
+            coords_by_type[str(atom_type)] = array[:, 5:8].astype(float)
+        return coords_by_type
 
     def _normalize_attachment_coords_by_type(self,
                                              attachment_coords_by_type,
@@ -1022,6 +1043,50 @@ class NetOptimizer:
             normalized["X"] = np.asarray(fallback_x_coords,
                                           dtype=float).reshape(-1, 3)
         return normalized
+
+    def _resolve_attachment_coords_by_type(self,
+                                           *,
+                                           attachment_coords_by_type=None,
+                                           attachment_data_by_type=None,
+                                           fallback_x_data=None):
+        fallback_x_coords = (
+            fallback_x_data[:, 5:8].astype(float)
+            if fallback_x_data is not None else None
+        )
+        normalized_from_coords = self._normalize_attachment_coords_by_type(
+            attachment_coords_by_type,
+            fallback_x_coords=None,
+        )
+        if normalized_from_coords:
+            return normalized_from_coords
+        normalized_from_data = self._normalize_attachment_coords_by_type(
+            self._extract_attachment_coords_from_data_by_type(
+                attachment_data_by_type
+            ),
+            fallback_x_coords=None,
+        )
+        if normalized_from_data:
+            return normalized_from_data
+        return self._normalize_attachment_coords_by_type(
+            None,
+            fallback_x_coords=fallback_x_coords,
+        )
+
+    def _flatten_attachment_coords(self, attachment_coords_by_type):
+        if not attachment_coords_by_type:
+            return None
+        flattened_coords = []
+        for atom_type in sorted(attachment_coords_by_type):
+            coords = np.asarray(
+                attachment_coords_by_type[atom_type],
+                dtype=float,
+            ).reshape(-1, 3)
+            if coords.size == 0:
+                continue
+            flattened_coords.append(coords)
+        if not flattened_coords:
+            return None
+        return np.vstack(flattened_coords)
 
     def _get_single_registry_entry(self, registry):
         if registry and len(registry) == 1:
@@ -1052,34 +1117,50 @@ class NetOptimizer:
         for neighbor in G.neighbors(node):
             role_entry = self._get_edge_registry_entry(G, (node, neighbor))
             if (role_entry is not None
-                    and role_entry.get("linker_center_data") is not None
-                    and role_entry.get("linker_center_X_data") is not None):
+                    and role_entry.get("linker_center_data") is not None):
                 return role_entry
         return None
 
     def _resolve_node_fragment_payload(self, G, node):
         if "CV" in node:
             role_entry = self._get_center_registry_entry_for_node(G, node)
-            if role_entry is not None:
+            if role_entry is not None and role_entry.get("linker_center_data") is not None:
                 return self._fragment_payload_from_arrays(
                     role_entry["linker_center_data"],
-                    role_entry["linker_center_X_data"],
+                    role_entry.get("linker_center_X_data"),
+                    attachment_data_by_type=role_entry.get(
+                        "linker_center_attachment_data_by_type"
+                    ),
                     attachment_coords_by_type=role_entry.get(
                         "linker_center_attachment_coords_by_type"
                     ),
                 )
-            return self._fragment_payload_from_arrays(self.EC_data,
-                                                      self.EC_X_data)
+            return self._fragment_payload_from_arrays(
+                self.EC_data,
+                self.EC_X_data,
+                attachment_data_by_type=self.EC_attachment_data_by_type,
+                attachment_coords_by_type=self.EC_attachment_coords_by_type,
+            )
 
         role_entry = self._get_node_registry_entry(G, node)
-        if (role_entry is not None and role_entry.get("node_data") is not None
-                and role_entry.get("node_X_data") is not None):
-            return self._fragment_payload_from_arrays(role_entry["node_data"],
-                                                      role_entry["node_X_data"],
-                                                      attachment_coords_by_type=role_entry.get(
-                                                          "node_attachment_coords_by_type"
-                                                      ))
-        return self._fragment_payload_from_arrays(self.V_data, self.V_X_data)
+
+        if role_entry is not None and role_entry.get("node_data") is not None:
+            return self._fragment_payload_from_arrays(
+                role_entry["node_data"],
+                role_entry.get("node_X_data"),
+                attachment_data_by_type=role_entry.get(
+                    "node_attachment_data_by_type"
+                ),
+                attachment_coords_by_type=role_entry.get(
+                    "node_attachment_coords_by_type"
+                ),
+            )
+        return self._fragment_payload_from_arrays(
+            self.V_data,
+            self.V_X_data,
+            attachment_data_by_type=self.V_attachment_data_by_type,
+            attachment_coords_by_type=self.V_attachment_coords_by_type,
+        )
 
     def _resolve_edge_fragment_payload(self, G, edge):
         role_entry = self._get_edge_registry_entry(G, edge)
@@ -1090,18 +1171,25 @@ class NetOptimizer:
             else:
                 data = role_entry.get("linker_center_data")
                 x_data = role_entry.get("linker_center_X_data")
-            if data is not None and x_data is not None:
+            attachment_coords_by_type = (
+                role_entry.get("linker_outer_attachment_coords_by_type")
+                if int(role_entry["linker_connectivity"]) > 2
+                else role_entry.get("linker_center_attachment_coords_by_type")
+            )
+            attachment_data_by_type = (
+                role_entry.get("linker_outer_attachment_data_by_type")
+                if int(role_entry["linker_connectivity"]) > 2
+                else role_entry.get("linker_center_attachment_data_by_type")
+            )
+            if data is not None:
                 linker_frag_length = role_entry.get("linker_frag_length")
                 if linker_frag_length is None:
                     linker_frag_length = self.linker_frag_length
                 return self._fragment_payload_from_arrays(
                     data,
                     x_data,
-                    attachment_coords_by_type=(
-                        role_entry.get("linker_outer_attachment_coords_by_type")
-                        if int(role_entry["linker_connectivity"]) > 2
-                        else role_entry.get("linker_center_attachment_coords_by_type")
-                    ),
+                    attachment_data_by_type=attachment_data_by_type,
+                    attachment_coords_by_type=attachment_coords_by_type,
                     linker_frag_length=linker_frag_length,
                     fake_edge=bool(role_entry.get("linker_fake_edge", False)),
                 )
@@ -1109,6 +1197,8 @@ class NetOptimizer:
         return self._fragment_payload_from_arrays(
             self.E_data,
             self.E_X_data,
+            attachment_data_by_type=self.E_attachment_data_by_type,
+            attachment_coords_by_type=self.E_attachment_coords_by_type,
             linker_frag_length=self.linker_frag_length,
             fake_edge=self.fake_edge,
         )

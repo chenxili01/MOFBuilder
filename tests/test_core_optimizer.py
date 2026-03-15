@@ -1657,6 +1657,145 @@ def test_prepare_role_fragment_payloads_keeps_single_role_scalar_fallback():
     )
 
 
+def test_prepare_role_fragment_payloads_accepts_typed_attachment_coords_without_legacy_x_rows():
+    optimizer = opt.NetOptimizer()
+    optimizer.constant_length = 1.54
+    optimizer.linker_frag_length = 3.0
+    optimizer.fake_edge = False
+    optimizer.sorted_nodes = ["V0_[0 0 0]", "V1_[0 0 0]"]
+    optimizer.sorted_edges = [("V0_[0 0 0]", "V1_[0 0 0]")]
+    optimizer.V_data = _fragment_table([
+        _fragment_row("N", "N", [0.0, 0.0, 0.0]),
+    ])
+    optimizer.V_X_data = None
+    optimizer.E_data = _fragment_table([
+        _fragment_row("L", "L", [-1.0, 0.0, 0.0]),
+        _fragment_row("L", "L", [1.0, 0.0, 0.0]),
+    ])
+    optimizer.E_X_data = None
+    optimizer.node_role_registry = {
+        "node:typed": {
+            "role_id": "node:typed",
+            "node_data": optimizer.V_data,
+            "node_X_data": None,
+            "node_attachment_coords_by_type": {
+                "XA": np.array([[2.0, 0.0, 0.0]], dtype=float),
+                "XB": np.array([[0.0, 2.0, 0.0]], dtype=float),
+            },
+        },
+    }
+    optimizer.edge_role_registry = {
+        "edge:typed": {
+            "role_id": "edge:typed",
+            "linker_connectivity": 2,
+            "linker_center_data": optimizer.E_data,
+            "linker_center_X_data": None,
+            "linker_center_attachment_coords_by_type": {
+                "XA": np.array([[-1.0, 0.0, 0.0]], dtype=float),
+                "XB": np.array([[1.0, 0.0, 0.0]], dtype=float),
+            },
+            "linker_frag_length": 3.0,
+            "linker_fake_edge": False,
+        },
+    }
+
+    g = nx.Graph()
+    g.add_node("V0_[0 0 0]",
+               ccoords=np.array([0.0, 0.0, 0.0]),
+               node_role_id="node:typed")
+    g.add_node("V1_[0 0 0]",
+               ccoords=np.array([4.0, 0.0, 0.0]),
+               node_role_id="node:typed")
+    g.add_edge("V0_[0 0 0]", "V1_[0 0 0]", edge_role_id="edge:typed")
+
+    optimizer._prepare_role_fragment_payloads(g)
+    target_edge_lengths = optimizer._get_target_edge_lengths()
+
+    expected_node_x_coords = np.array([[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]])
+    assert np.allclose(
+        optimizer.node_fragment_payloads["V0_[0 0 0]"]["x_coords"],
+        expected_node_x_coords,
+    )
+    assert np.allclose(
+        optimizer.edge_fragment_payloads[("V0_[0 0 0]", "V1_[0 0 0]")]["x_coords"],
+        np.array([[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+    )
+    expected = 3.0 + 2 * 1.54 + 2.0 + 2.0
+    assert np.isclose(
+        target_edge_lengths[("V0_[0 0 0]", "V1_[0 0 0]")],
+        expected,
+    )
+
+
+def test_prepare_role_fragment_payloads_derive_typed_attachment_coords_from_attachment_rows():
+    optimizer = opt.NetOptimizer()
+    optimizer.constant_length = 1.54
+    optimizer.linker_frag_length = 3.0
+    optimizer.fake_edge = False
+    optimizer.sorted_nodes = ["V0_[0 0 0]", "V1_[0 0 0]"]
+    optimizer.sorted_edges = [("V0_[0 0 0]", "V1_[0 0 0]")]
+    optimizer.V_data = _fragment_table([
+        _fragment_row("Al1", "Al", [0.0, 0.0, 0.0]),
+    ])
+    optimizer.V_X_data = None
+    optimizer.E_data = _fragment_table([
+        _fragment_row("L", "L", [-1.0, 0.0, 0.0]),
+        _fragment_row("L", "L", [1.0, 0.0, 0.0]),
+    ])
+    optimizer.E_X_data = None
+    optimizer.node_role_registry = {
+        "node:typed": {
+            "role_id": "node:typed",
+            "node_data": optimizer.V_data,
+            "node_X_data": None,
+            "node_attachment_data_by_type": {
+                "XA": _fragment_table([
+                    ["XA15", "C", "3", "MOL", "1", "0.015", "2.042", "-0.86955556", "0", "0.0", "XA"],
+                    ["XA16", "C", "6", "MOL", "1", "0.015", "-2.042", "-0.86955556", "0", "0.0", "XA"],
+                ]),
+            },
+            "node_attachment_coords_by_type": {},
+        },
+    }
+    optimizer.edge_role_registry = {
+        "edge:typed": {
+            "role_id": "edge:typed",
+            "linker_connectivity": 2,
+            "linker_center_data": optimizer.E_data,
+            "linker_center_X_data": None,
+            "linker_center_attachment_data_by_type": {
+                "XA": _fragment_table([
+                    ["XA1", "C", "1", "LIG", "1", "-1.0", "0.0", "0.0", "0", "0.0", "XA"],
+                    ["XA2", "C", "2", "LIG", "1", "1.0", "0.0", "0.0", "0", "0.0", "XA"],
+                ]),
+            },
+            "linker_center_attachment_coords_by_type": {},
+            "linker_frag_length": 3.0,
+            "linker_fake_edge": False,
+        },
+    }
+
+    g = nx.Graph()
+    g.add_node("V0_[0 0 0]",
+               ccoords=np.array([0.0, 0.0, 0.0]),
+               node_role_id="node:typed")
+    g.add_node("V1_[0 0 0]",
+               ccoords=np.array([4.0, 0.0, 0.0]),
+               node_role_id="node:typed")
+    g.add_edge("V0_[0 0 0]", "V1_[0 0 0]", edge_role_id="edge:typed")
+
+    optimizer._prepare_role_fragment_payloads(g)
+
+    np.testing.assert_allclose(
+        optimizer.node_fragment_payloads["V0_[0 0 0]"]["attachment_coords_by_type"]["XA"],
+        np.array([[0.015, 2.042, -0.86955556], [0.015, -2.042, -0.86955556]]),
+    )
+    np.testing.assert_allclose(
+        optimizer.edge_fragment_payloads[("V0_[0 0 0]", "V1_[0 0 0]")]["attachment_coords_by_type"]["XA"],
+        np.array([[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+    )
+
+
 def test_role_aware_optimizer_uses_role_registries_for_grouping_and_edge_payloads(
     monkeypatch,
 ):
