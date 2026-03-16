@@ -4,11 +4,13 @@ import pytest
 
 from mofbuilder.core import optimizer as opt
 from mofbuilder.core.optimizer_contract import (
+    IncidentEdgePlacementRequirement,
     NodeLocalConstrainedRefinement,
     NodeDiscreteAmbiguityResolution,
     LegalNodeCorrespondence,
     NodeLocalRigidInitialization,
     NodePlacementContract,
+    _extract_orientation_pair_points,
     compile_local_constrained_refinement,
     compile_discrete_ambiguity_resolution,
     compile_local_rigid_initialization,
@@ -1429,6 +1431,110 @@ def test_compile_local_rigid_initialization_treats_null_alignment_edges_as_orien
     assert sum(
         pair.metadata["pair_kind"] == "orientation_only" for pair in rigid_init.anchor_pairs
     ) == 2
+
+
+def test_extract_orientation_pair_points_preserves_per_slot_radius_for_shape_preserving_pairs():
+    local_node_id = "V0"
+    first_slot_rule = {
+        "attachment_index": 0,
+        "slot_type": "XA",
+        "anchor_vector": (2.0, 0.0, 0.0),
+        "source_anchor_vector": (2.0, 0.0, 0.0),
+        "slot_radius": 2.0,
+        "chemistry_direction": (1.0, 0.0, 0.0),
+    }
+    second_slot_rule = {
+        "attachment_index": 1,
+        "slot_type": "XB",
+        "anchor_vector": (0.0, 0.5, 0.0),
+        "source_anchor_vector": (0.0, 0.5, 0.0),
+        "slot_radius": 0.5,
+        "chemistry_direction": (0.0, 1.0, 0.0),
+    }
+    first_requirement = IncidentEdgePlacementRequirement(
+        edge_id="V0|V1",
+        edge_role_id="edge:EA",
+        incident_index=0,
+        resolve_mode="alignment_only",
+        is_null_edge=True,
+        metadata={
+            "constraint": {},
+            "edge_metadata": {
+                "orientation_reference_scale": 9.0,
+                "target_anchor_direction_by_node": {
+                    local_node_id: (0.0, -8.0, 0.0),
+                },
+            },
+        },
+    )
+    second_requirement = IncidentEdgePlacementRequirement(
+        edge_id="V0|V2",
+        edge_role_id="edge:EB",
+        incident_index=1,
+        resolve_mode="alignment_only",
+        is_null_edge=True,
+        metadata={
+            "constraint": {},
+            "edge_metadata": {
+                "orientation_reference_scale": 9.0,
+                "target_anchor_direction_by_node": {
+                    local_node_id: (4.0, 0.0, 0.0),
+                },
+            },
+        },
+    )
+
+    first_pairs = _extract_orientation_pair_points(first_slot_rule, first_requirement, local_node_id)
+    second_pairs = _extract_orientation_pair_points(
+        second_slot_rule,
+        second_requirement,
+        local_node_id,
+    )
+
+    assert first_pairs == (
+        ((2.0, 0.0, 0.0), (0.0, -2.0, 0.0)),
+        ((-2.0, 0.0, 0.0), (0.0, 2.0, 0.0)),
+    )
+    assert second_pairs == (
+        ((0.0, 0.5, 0.0), (0.5, 0.0, 0.0)),
+        ((0.0, -0.5, 0.0), (-0.5, 0.0, 0.0)),
+    )
+    assert max(np.linalg.norm(pair[1]) for pair in first_pairs) == pytest.approx(2.0)
+    assert max(np.linalg.norm(pair[1]) for pair in second_pairs) == pytest.approx(0.5)
+
+
+def test_extract_orientation_pair_points_falls_back_to_legacy_uniform_scale_proxy_without_source_shape():
+    local_node_id = "V0"
+    slot_rule = {
+        "attachment_index": 0,
+        "slot_type": "XA",
+        "chemistry_direction": (0.0, 2.0, 0.0),
+    }
+    requirement = IncidentEdgePlacementRequirement(
+        edge_id="V0|V1",
+        edge_role_id="edge:EA",
+        incident_index=0,
+        resolve_mode="alignment_only",
+        is_null_edge=True,
+        metadata={
+            "constraint": {},
+            "edge_metadata": {
+                "orientation_reference_scale": 3.5,
+                "target_anchor_direction_by_node": {
+                    local_node_id: (7.0, 0.0, 0.0),
+                },
+            },
+        },
+    )
+
+    pairs = _extract_orientation_pair_points(slot_rule, requirement, local_node_id)
+
+    assert pairs == (
+        ((0.0, 3.5, 0.0), (3.5, 0.0, 0.0)),
+        ((0.0, -3.5, 0.0), (-3.5, 0.0, 0.0)),
+    )
+    assert max(np.linalg.norm(pair[0]) for pair in pairs) == pytest.approx(3.5)
+    assert max(np.linalg.norm(pair[1]) for pair in pairs) == pytest.approx(3.5)
 
 
 def test_compile_discrete_ambiguity_resolution_scores_legal_candidates_and_selects_best():

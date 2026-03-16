@@ -474,6 +474,13 @@ def _extract_source_direction(slot_rule: FrozenMapping) -> Optional[Tuple[float,
     )
 
 
+def _extract_source_anchor_vector(slot_rule: FrozenMapping) -> Optional[Tuple[float, float, float]]:
+    return (
+        _coerce_point3(slot_rule.get("source_anchor_vector"))
+        or _coerce_point3(slot_rule.get("anchor_vector"))
+    )
+
+
 def _extract_target_direction_vector(
     requirement: IncidentEdgePlacementRequirement,
     local_node_id: str,
@@ -489,12 +496,16 @@ def _extract_target_direction_vector(
     constraint = metadata.get("constraint", {})
 
     return (
-        _coerce_point3(metadata.get("target_direction"))
+        _coerce_point3(metadata.get("target_anchor_direction"))
+        or _coerce_point3(metadata.get("target_direction"))
         or _coerce_point3(metadata.get("target_vector"))
+        or _coerce_point3(constraint.get("target_anchor_direction"))
         or _coerce_point3(constraint.get("target_direction"))
         or _coerce_point3(constraint.get("target_vector"))
+        or _coerce_point3(edge_metadata.get("target_anchor_direction"))
         or _coerce_point3(edge_metadata.get("target_direction"))
         or _coerce_point3(edge_metadata.get("target_vector"))
+        or _coerce_point3((edge_metadata.get("target_anchor_direction_by_node") or {}).get(local_node_id))
         or _coerce_point3((edge_metadata.get("target_direction_by_node") or {}).get(local_node_id))
         or _coerce_point3((edge_metadata.get("target_vector_by_node") or {}).get(local_node_id))
     )
@@ -534,19 +545,64 @@ def _resolve_orientation_reference_scale(
     return scale_value if scale_value > 0.0 else 1.0
 
 
+def _resolve_source_slot_radius(
+    slot_rule: FrozenMapping,
+    requirement: IncidentEdgePlacementRequirement,
+    local_node_id: str,
+) -> Optional[float]:
+    metadata = requirement.metadata
+    constraint = metadata.get("constraint", {})
+    edge_metadata = metadata.get("edge_metadata", {})
+    slot_radius = (
+        slot_rule.get("slot_radius")
+        or metadata.get("slot_radius")
+        or constraint.get("slot_radius")
+        or edge_metadata.get("slot_radius")
+        or (edge_metadata.get("slot_radius_by_node") or {}).get(local_node_id)
+    )
+    try:
+        if slot_radius is not None:
+            slot_radius_value = float(slot_radius)
+            if slot_radius_value > 1.0e-12:
+                return slot_radius_value
+    except (TypeError, ValueError):
+        pass
+
+    source_anchor_vector = _extract_source_anchor_vector(slot_rule)
+    if source_anchor_vector is None:
+        return None
+    source_anchor_norm = float(np.linalg.norm(np.asarray(source_anchor_vector, dtype=float)))
+    return source_anchor_norm if source_anchor_norm > 1.0e-12 else None
+
+
 def _extract_orientation_pair_points(
     slot_rule: FrozenMapping,
     requirement: IncidentEdgePlacementRequirement,
     local_node_id: str,
 ) -> Tuple[Tuple[Tuple[float, float, float], Tuple[float, float, float]], ...]:
-    source_direction = _extract_source_direction(slot_rule)
     target_direction = _extract_target_direction_vector(requirement, local_node_id)
-    if source_direction is None or target_direction is None:
+    normalized_target = _normalize_vector(np.asarray(target_direction, dtype=float))
+    if normalized_target is None:
+        return ()
+
+    source_anchor_vector = _extract_source_anchor_vector(slot_rule)
+    slot_radius = _resolve_source_slot_radius(slot_rule, requirement, local_node_id)
+    if source_anchor_vector is not None and slot_radius is not None:
+        positive_source = tuple(float(value) for value in source_anchor_vector)
+        positive_target = tuple(float(value) for value in normalized_target * slot_radius)
+        negative_source = tuple(float(value) for value in -np.asarray(source_anchor_vector, dtype=float))
+        negative_target = tuple(float(value) for value in -normalized_target * slot_radius)
+        return (
+            (positive_source, positive_target),
+            (negative_source, negative_target),
+        )
+
+    source_direction = _extract_source_direction(slot_rule)
+    if source_direction is None:
         return ()
 
     normalized_source = _normalize_vector(np.asarray(source_direction, dtype=float))
-    normalized_target = _normalize_vector(np.asarray(target_direction, dtype=float))
-    if normalized_source is None or normalized_target is None:
+    if normalized_source is None:
         return ()
 
     scale = _resolve_orientation_reference_scale(requirement)
@@ -1019,12 +1075,15 @@ def compile_local_rigid_initialization(
         source_anchor_representation=(
             "node slot_rules[*]['anchor_vector'|'anchor_point'|'anchor_position'] "
             "provide node-local source anchors; orientation-only null/alignment edges "
-            "use normalized chemistry_direction vectors as centered pseudo-anchor pairs."
+            "preserve real source-anchor vectors and build centered shape-preserving "
+            "pseudo-anchor pairs, falling back to normalized direction proxies only "
+            "when source-shape data is unavailable."
         ),
         target_anchor_representation=(
             "compiled target_direction metadata carries edge-local target anchors via "
             "constraint or edge metadata target_* fields; orientation-only null/alignment "
-            "edges use target_direction/target_vector data without contributing linker-length translation."
+            "edges prefer target_anchor_direction/target_direction data scaled by the "
+            "matching source-side slot radius without contributing linker-length translation."
         ),
         metadata={
             "anchor_count": len(anchor_pairs),

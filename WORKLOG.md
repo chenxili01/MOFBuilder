@@ -148,3 +148,57 @@ Implemented Phase 2 only. In [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof
 The bounded regressions are in [test_core_builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_builder.py#L1700), covering one heterogeneous-radius preservation case and one legacy literal-`X` compatibility case. I also updated the handoff in [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md#L1) and appended the Phase 2 record to [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md).
 
 Validation: `python -m py_compile src/mofbuilder/core/builder.py tests/test_core_builder.py` and `git diff --check` passed. Runtime test execution could not be completed here because the available Python environment is missing `networkx` and `pytest`.
+
+
+## planner-run
+
+- Timestamp: 2026-03-16T10:18:17+00:00
+
+Active phase is `Phase 3 — Orientation Pair Construction Fix`.
+
+I updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) to move the workflow from `PLANNING` / `planner` to `READY FOR EXECUTION` / `executor`, with `Checkpoint: phase-3-ready`.
+
+The Phase 3 handoff is now implementation-ready and bounded to the covered seam in `src/mofbuilder/core/optimizer_contract.py`. It points the executor at `_extract_orientation_pair_points`, `_resolve_orientation_reference_scale`, and the orientation-only pair assembly in `compile_local_rigid_initialization`, and limits test work to bounded regressions in `tests/test_core_optimizer.py`. It explicitly stops before Phase 4 SVD-input changes or Phase 5 downstream guarding.
+
+No production code or tests were implemented.
+
+## executor-run
+
+- Timestamp: 2026-03-16T11:24:47+01:00
+
+Implemented `Phase 3` only.
+
+Changed files:
+
+- [src/mofbuilder/core/optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py)
+- [tests/test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py)
+- [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md)
+- [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md)
+
+What changed:
+
+- replaced the covered orientation-only default path in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py) so `_extract_orientation_pair_points` now preserves the real `source_anchor_vector` and matching `slot_radius` when constructing each `shape-preserving pseudo anchor`
+- extended covered target-direction reads to prefer builder-compiled `target_anchor_direction` metadata while keeping the `legacy uniform-scale orientation proxy` as an explicit fallback only when source-shape data is unavailable
+- added bounded optimizer regressions in [tests/test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py) for one heterogeneous per-slot-radius case and one explicit legacy fallback case, then advanced [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) to the Phase 4 executor handoff
+
+Validations:
+
+- ran `python -m py_compile src/mofbuilder/core/optimizer_contract.py tests/test_core_optimizer.py`
+- ran `git diff --check`
+- ran a direct `PYTHONPATH=src python` assertion script that validated the new shape-preserving orientation-pair path, the explicit legacy fallback path, and the existing null-alignment local rigid initialization regression; the shell environment does not have `pytest`, so `python -m pytest ...` could not be executed here
+
+Risks:
+
+- Phase 4 still needs to ensure the covered local rigid/SVD initialization consumes the new shape-preserving orientation inputs in the bounded seed-generation seam without widening into downstream guarding
+- full pytest execution remains blocked in this shell until the project test dependency set includes `pytest`
+
+
+## executor-run
+
+- Timestamp: 2026-03-16T10:26:31+00:00
+
+Implemented Phase 3 only. In [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py), the covered orientation-only seam now builds shape-preserving pseudo anchors from the real `source_anchor_vector` and matching `slot_radius`, and it now prefers builder-compiled `target_anchor_direction` metadata when resolving the target-side direction. The legacy uniform-scale orientation proxy remains only as an explicit fallback when source-shape data is unavailable. I also updated the local rigid-init representation strings so the seam is described honestly.
+
+Bounded regressions were added in [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py) for one heterogeneous per-slot-radius case and one explicit fallback case. [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) now hands off to Phase 4 as `READY_FOR_EXECUTION`, and [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) has the append-only Phase 3 executor entry.
+
+Validation: `python -m py_compile src/mofbuilder/core/optimizer_contract.py tests/test_core_optimizer.py`, `git diff --check`, and a direct `PYTHONPATH=src python` assertion script covering the new shape-preserving path, the explicit fallback path, and the existing null-alignment rigid-init regression all passed. `pytest` is not installed in this shell, so `python -m pytest` could not be run here.
