@@ -219,6 +219,17 @@ I updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/S
 
 Implemented `Phase 4` only.
 
+
+## planner-run
+
+- Timestamp: 2026-03-16T12:26:27+00:00
+
+Active phase is Phase 6. I tightened the Phase 6 handoff into an implementation-ready single-phase plan in [PLAN.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/PLAN.md) and updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) from `PLANNING` / `planner` to `READY FOR EXECUTION` / `executor`.
+
+The plan stays bounded to Phase 6 only: audit the compatibility seam in `src/mofbuilder/core/optimizer_contract.py`, `src/mofbuilder/core/optimizer.py`, `src/mofbuilder/core/builder.py`, and `tests/test_core_optimizer.py`; keep already-supported covered families on the shape-preserving rollout path only when builder-compiled `source_anchor_vector`, `target_anchor_direction`, and `slot_radius` semantics are present; keep legacy literal-`X`, missing-shape, and unsupported-family cases on an explicit compatibility path; add one bounded covered compatibility regression and one bounded fallback regression; then stop without widening into new family support, broad legacy-path removal, or Phase 7 regression/debug expansion.
+
+No production code or tests were changed during planning.
+
 Changed files:
 
 - [src/mofbuilder/core/optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py)
@@ -313,3 +324,60 @@ Implemented Phase 5 only.
 In [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py#L525), `NetOptimizer._compile_role_aware_initial_rotations` now preserves the covered Phase 4 `role-aware seed rotation` when downstream geometry-only refinement drifts away from a shape-preserving semantic seed. The guard is narrow: it applies only when the rigid seed carries shape-preserving metadata and no `legacy uniform-scale orientation proxy`, and the debug record now exposes `selected_pose_source`, `covered_shape_preserving_case`, and the bounded `guard_reason` in [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py#L618). I added one bounded regression in [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py#L299) that forces refinement drift and proves the covered seed pose is preserved. I also updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md#L1) and appended the executor entry to [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md#L274).
 
 Validation passed with `python -m py_compile src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`, `git diff --check`, and a direct `PYTHONPATH=src python` assertion script using lightweight runtime stubs to exercise the new Phase 5 guard. `python -m pytest ...` could not be run here because this shell does not have `pytest` installed.
+
+
+## planner-run
+
+- Timestamp: 2026-03-16T12:37:06+00:00
+
+Active phase is `Phase 6 — Compatibility Layer and Guarded Rollout`.
+
+I tightened the Phase 6 executor handoff in [PLAN.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/PLAN.md) so it is implementation-ready and bounded to the compatibility seam only: audit `optimizer_contract.py`, `optimizer.py`, `builder.py`, and `tests/test_core_optimizer.py`; keep the shape-preserving path limited to already-supported covered families with builder-compiled `source_anchor_vector`, `target_anchor_direction`, and `slot_radius`; keep legacy literal-`X`, missing-shape, and unsupported-family cases on explicit fallback; add only one covered compatibility regression and one fallback regression; then stop before Phase 7 work.
+
+I updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) to `READY FOR EXECUTION` with `Next step: executor` and `Checkpoint: phase-6-executor-handoff`, and appended the planner handoff to [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md). No production code or tests were implemented. Validation: `git diff --check -- PLAN.md STATUS.md WORKLOG.md` passed.
+
+
+## executor-run
+
+- Timestamp: 2026-03-16T13:46:56+0100
+
+Implemented `Phase 6` only.
+
+Changed files:
+
+- [src/mofbuilder/core/optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py)
+- [src/mofbuilder/core/optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py)
+- [tests/test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py)
+- [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md)
+- [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md)
+
+What changed:
+
+- added a bounded rollout-eligibility evaluator in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py#L653) so the covered shape-preserving path stays limited to the already-supported `ROLE-AWARE` seam and explicitly falls back for unsupported-family, legacy literal-`X`, missing-source-shape, and missing-target-direction cases
+- recorded that rollout eligibility on local rigid initialization metadata in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py#L1079) so downstream guarded seed preservation only treats bounded supported cases as covered
+- updated [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py#L488) to stop unsupported rollout cases before rigid/refinement selection and keep them on the explicit compatibility path, while leaving the existing covered-role selection flow intact for supported cases
+- added one bounded supported-rollout regression and one explicit legacy literal-`X` fallback regression in [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py#L300)
+- updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) to mark Phase 6 complete and hand the workflow back to planner for Phase 7 only
+
+Validations:
+
+- ran `python -m py_compile src/mofbuilder/core/optimizer.py src/mofbuilder/core/optimizer_contract.py tests/test_core_optimizer.py`
+- ran `git diff --check`
+- ran a direct `PYTHONPATH=src python` assertion script with lightweight runtime stubs to verify one supported `ROLE-AWARE` rollout case stays selected and one legacy literal-`X` case stays on the explicit fallback path
+- `python -m pytest tests/test_core_optimizer.py -k \"shape_preserving_rollout or legacy_literal_x_rollout or preserves_shape_preserving_seed_when_refinement_drifts or supports_v_and_c_guarded_cases\"` could not be run in this shell because the available Python environment does not have `pytest`
+
+Risks:
+
+- Phase 7 still needs broader regression/debug coverage for mixed-source and remaining bounded compatibility cases without widening rollout scope
+- the supported rollout remains intentionally narrow to the existing `ROLE-AWARE` seam; expanding beyond that would be new family support and is still out of scope
+
+
+## executor-run
+
+- Timestamp: 2026-03-16T12:48:15+00:00
+
+Implemented Phase 6 only. The rollout is now explicitly gated in [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer_contract.py) and [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py): only the bounded `ROLE-AWARE` seam with builder-compiled `source_anchor_vector`, `target_anchor_direction`, and `slot_radius` stays on the shape-preserving path, while legacy literal-`X`, missing-shape, missing-target-direction, and unsupported-family cases fall back explicitly. I also recorded rollout eligibility on rigid-init metadata so the Phase 5 seed guard only treats supported cases as covered.
+
+Bounded Phase 6 regressions are in [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py), covering one supported rollout case and one explicit legacy literal-`X` fallback case. [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) now marks Phase 6 complete, and [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md) has the append-only executor entry.
+
+Validation: `python -m py_compile src/mofbuilder/core/optimizer.py src/mofbuilder/core/optimizer_contract.py tests/test_core_optimizer.py`, `git diff --check`, and a direct `PYTHONPATH=src python` assertion script all passed. `pytest` could not be run here because it is not installed in the available Python environment.

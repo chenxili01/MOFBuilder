@@ -31,6 +31,7 @@ from .optimizer_contract import (
     compile_local_rigid_initialization,
     compile_legal_node_correspondences,
     compile_node_placement_contract,
+    evaluate_shape_preserving_rollout_eligibility,
 )
 from .other import fetch_X_atoms_ind_array
 from .runtime_snapshot import OptimizationSemanticSnapshot
@@ -484,6 +485,22 @@ class NetOptimizer:
                         fallback_reason="no_legal_correspondence",
                     )
                     continue
+                rollout_eligibility = evaluate_shape_preserving_rollout_eligibility(
+                    snapshot,
+                    contract,
+                    correspondences=correspondences,
+                )
+                if not rollout_eligibility["eligible"]:
+                    debug_records[node_id] = self._build_guarded_debug_record(
+                        group_name=group_name,
+                        node_id=node_id,
+                        node_record=node_record,
+                        node_contract=contract,
+                        correspondences=correspondences,
+                        status="fallback",
+                        fallback_reason=rollout_eligibility["fallback_reason"],
+                    )
+                    continue
                 ambiguity_resolution = None
                 selected_correspondence = None
                 selected_initialization = None
@@ -559,6 +576,9 @@ class NetOptimizer:
             return False
         metadata = rigid_initialization.metadata
         return (
+            bool(metadata.get("shape_preserving_rollout_eligible", True))
+            and metadata.get("shape_preserving_rollout_fallback_reason") is None
+            and
             int(metadata.get("shape_preserving_orientation_pair_count", 0)) > 0
             and int(metadata.get("legacy_orientation_proxy_pair_count", 0)) == 0
         )

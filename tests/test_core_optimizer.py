@@ -5,6 +5,7 @@ import pytest
 from mofbuilder.core import optimizer as opt
 from mofbuilder.core.optimizer_contract import (
     IncidentEdgePlacementRequirement,
+    LegalSlotAssignment,
     NodeLocalConstrainedRefinement,
     NodeDiscreteAmbiguityResolution,
     LegalNodeCorrespondence,
@@ -294,6 +295,256 @@ def test_compile_role_aware_initial_rotations_supports_v_and_c_guarded_cases(
     assert set(optimizer.role_aware_local_placement_records) == {"V0", "C0"}
     assert optimizer.role_aware_local_placement_debug_records["V0"]["status"] == "selected"
     assert optimizer.role_aware_local_placement_debug_records["C0"]["status"] == "selected"
+
+
+def test_compile_role_aware_initial_rotations_keeps_supported_shape_preserving_rollout(
+    monkeypatch,
+):
+    semantic_snapshot = OptimizationSemanticSnapshot(
+        family_name="ROLE-AWARE",
+        graph_phase="sG",
+        graph_node_records={
+            "V0": GraphNodeSemanticRecord(
+                node_id="V0",
+                role_id="node:VA",
+                role_class="V",
+            ),
+        },
+    )
+    optimizer = opt.NetOptimizer(semantic_snapshot=semantic_snapshot)
+    optimizer.sorted_nodes = ["V0"]
+    optimizer.use_role_aware_local_placement = True
+
+    def fake_contract(node_id, semantic_snapshot=None):
+        return NodePlacementContract(
+            node_id=node_id,
+            node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+            node_role_class=semantic_snapshot.graph_node_records[node_id].role_class,
+            slot_rules=(
+                {
+                    "attachment_index": 0,
+                    "slot_type": "XA",
+                    "anchor_resolution_mode": "slot_type_match",
+                    "source_anchor_vector": (1.0, 0.0, 0.0),
+                    "slot_radius": 1.0,
+                    "anchor_vector": (1.0, 0.0, 0.0),
+                    "chemistry_direction": (1.0, 0.0, 0.0),
+                },
+            ),
+            local_slot_types=("XA",),
+            incident_edge_ids=(f"{node_id}|E0",),
+            resolve_mode_hints=("alignment_only",),
+            null_edge_flags={f"{node_id}|E0": True},
+            incident_requirements=(
+                IncidentEdgePlacementRequirement(
+                    edge_id=f"{node_id}|E0",
+                    edge_role_id="edge:EA",
+                    incident_index=0,
+                    local_slot_index=0,
+                    resolve_mode="alignment_only",
+                    is_null_edge=True,
+                    metadata={
+                        "edge_metadata": {
+                            "target_anchor_direction_by_node": {
+                                node_id: (0.0, 1.0, 0.0),
+                            },
+                        },
+                    },
+                ),
+            ),
+        )
+
+    def fake_correspondences(node_id, semantic_snapshot=None, **_kwargs):
+        return (
+            LegalNodeCorrespondence(
+                node_id=node_id,
+                node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+                assignments=(
+                    LegalSlotAssignment(
+                        edge_id=f"{node_id}|E0",
+                        edge_role_id="edge:EA",
+                        incident_index=0,
+                        slot_index=0,
+                        slot_type="XA",
+                        resolve_mode="alignment_only",
+                        is_null_edge=True,
+                    ),
+                ),
+                edge_to_slot_index={f"{node_id}|E0": 0},
+            ),
+        )
+
+    def fake_rigid(node_id, semantic_snapshot=None, **_kwargs):
+        return NodeLocalRigidInitialization(
+            node_id=node_id,
+            node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+            correspondence=LegalNodeCorrespondence(
+                node_id=node_id,
+                node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+                edge_to_slot_index={f"{node_id}|E0": 0},
+            ),
+            anchor_pairs=(),
+            rotation_matrix=((1.0, 0.0, 0.0),
+                             (0.0, 1.0, 0.0),
+                             (0.0, 0.0, 1.0)),
+            translation_vector=(0.0, 0.0, 0.0),
+            rmsd=0.0,
+            source_anchor_representation="anchor_vector",
+            target_anchor_representation="target_point",
+            metadata={
+                "shape_preserving_rollout_eligible": True,
+                "shape_preserving_rollout_fallback_reason": None,
+                "orientation_only_pair_count": 2,
+                "shape_preserving_orientation_pair_count": 2,
+                "stable_shape_support_pair_count": 2,
+                "legacy_orientation_proxy_pair_count": 0,
+            },
+        )
+
+    def fake_refinement(node_id, semantic_snapshot=None, rigid_initialization=None, **_kwargs):
+        return NodeLocalConstrainedRefinement(
+            node_id=node_id,
+            node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+            correspondence=rigid_initialization.correspondence,
+            rigid_initialization=rigid_initialization,
+            rotation_matrix=((1.0, 0.0, 0.0),
+                             (0.0, 1.0, 0.0),
+                             (0.0, 0.0, 1.0)),
+            translation_vector=(0.0, 0.0, 0.0),
+            objective_value=0.0,
+            initial_objective_value=0.0,
+        )
+
+    monkeypatch.setattr(optimizer, "compile_node_placement_contract", fake_contract)
+    monkeypatch.setattr(
+        optimizer,
+        "compile_legal_node_correspondences",
+        fake_correspondences,
+    )
+    monkeypatch.setattr(optimizer, "compile_local_rigid_initialization", fake_rigid)
+    monkeypatch.setattr(
+        optimizer,
+        "compile_local_constrained_refinement",
+        fake_refinement,
+    )
+
+    rotations = optimizer._compile_role_aware_initial_rotations(
+        {"group:V": {"ind_ofsortednodes": [0]}},
+        semantic_snapshot=semantic_snapshot,
+    )
+
+    assert np.allclose(rotations["group:V"], np.eye(3))
+    assert optimizer.role_aware_local_placement_debug_records["V0"]["status"] == "selected"
+    assert optimizer.role_aware_local_placement_debug_records["V0"]["fallback_reason"] is None
+
+
+def test_compile_role_aware_initial_rotations_falls_back_for_legacy_literal_x_rollout(
+    monkeypatch,
+):
+    semantic_snapshot = OptimizationSemanticSnapshot(
+        family_name="ROLE-AWARE",
+        graph_phase="sG",
+        graph_node_records={
+            "V0": GraphNodeSemanticRecord(
+                node_id="V0",
+                role_id="node:VA",
+                role_class="V",
+            ),
+        },
+    )
+    optimizer = opt.NetOptimizer(semantic_snapshot=semantic_snapshot)
+    optimizer.sorted_nodes = ["V0"]
+    optimizer.use_role_aware_local_placement = True
+
+    def fake_contract(node_id, semantic_snapshot=None):
+        return NodePlacementContract(
+            node_id=node_id,
+            node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+            node_role_class=semantic_snapshot.graph_node_records[node_id].role_class,
+            slot_rules=(
+                {
+                    "attachment_index": 0,
+                    "slot_type": "XA",
+                    "anchor_resolution_mode": "legacy_literal_X_compatibility",
+                    "anchor_source_type": "X",
+                    "source_atom_type": "X",
+                    "source_anchor_vector": (1.0, 0.0, 0.0),
+                    "slot_radius": 1.0,
+                    "anchor_vector": (1.0, 0.0, 0.0),
+                    "chemistry_direction": (1.0, 0.0, 0.0),
+                },
+            ),
+            local_slot_types=("XA",),
+            incident_edge_ids=(f"{node_id}|E0",),
+            resolve_mode_hints=("alignment_only",),
+            null_edge_flags={f"{node_id}|E0": True},
+            incident_requirements=(
+                IncidentEdgePlacementRequirement(
+                    edge_id=f"{node_id}|E0",
+                    edge_role_id="edge:EA",
+                    incident_index=0,
+                    local_slot_index=0,
+                    resolve_mode="alignment_only",
+                    is_null_edge=True,
+                    metadata={
+                        "edge_metadata": {
+                            "target_anchor_direction_by_node": {
+                                node_id: (0.0, 1.0, 0.0),
+                            },
+                        },
+                    },
+                ),
+            ),
+        )
+
+    def fake_correspondences(node_id, semantic_snapshot=None, **_kwargs):
+        return (
+            LegalNodeCorrespondence(
+                node_id=node_id,
+                node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+                assignments=(
+                    LegalSlotAssignment(
+                        edge_id=f"{node_id}|E0",
+                        edge_role_id="edge:EA",
+                        incident_index=0,
+                        slot_index=0,
+                        slot_type="XA",
+                        resolve_mode="alignment_only",
+                        is_null_edge=True,
+                    ),
+                ),
+                edge_to_slot_index={f"{node_id}|E0": 0},
+            ),
+        )
+
+    monkeypatch.setattr(optimizer, "compile_node_placement_contract", fake_contract)
+    monkeypatch.setattr(
+        optimizer,
+        "compile_legal_node_correspondences",
+        fake_correspondences,
+    )
+    monkeypatch.setattr(
+        optimizer,
+        "compile_local_rigid_initialization",
+        lambda *_args, **_kwargs: pytest.fail("legacy literal-X rollout must stay on fallback path"),
+    )
+    monkeypatch.setattr(
+        optimizer,
+        "compile_local_constrained_refinement",
+        lambda *_args, **_kwargs: pytest.fail("legacy literal-X rollout must stay on fallback path"),
+    )
+
+    rotations = optimizer._compile_role_aware_initial_rotations(
+        {"group:V": {"ind_ofsortednodes": [0]}},
+        semantic_snapshot=semantic_snapshot,
+    )
+
+    assert rotations == {}
+    assert optimizer.role_aware_local_placement_debug_records["V0"]["status"] == "fallback"
+    assert (
+        optimizer.role_aware_local_placement_debug_records["V0"]["fallback_reason"]
+        == "legacy_literal_X_compatibility"
+    )
 
 
 def test_compile_role_aware_initial_rotations_preserves_shape_preserving_seed_when_refinement_drifts(

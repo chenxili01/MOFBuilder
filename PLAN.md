@@ -432,19 +432,97 @@ stabilize rollout without widening scope
 
 Execution plan for this phase only:
 
-1. Keep legacy and already-supported compatibility behavior working.
-2. Add any necessary bounded rollout guards for the new shape-preserving path.
-3. Document supported versus unsupported coverage honestly.
-4. Add bounded compatibility tests.
-5. Do not remove broad legacy paths or widen scope beyond the covered seam.
+1. Audit the covered compatibility seam in
+   `src/mofbuilder/core/optimizer_contract.py`,
+   `src/mofbuilder/core/optimizer.py`,
+   `src/mofbuilder/core/builder.py`, and
+   `tests/test_core_optimizer.py`
+   to identify where Phase 2-5 shape-preserving behavior is entered, where
+   legacy literal-`X` or already-supported families still depend on explicit
+   fallback behavior, and where unsupported families must remain outside the
+   covered rollout.
+2. Keep the covered Phase 2-5 shape-preserving path enabled only for the
+   already-supported family set that supplies builder-compiled
+   `source_anchor_vector`, `target_anchor_direction`, and `slot_radius`
+   semantics needed by the covered SVD and guarded-refinement seam.
+3. Add only the bounded compatibility/rollout guards needed so legacy
+   literal-`X`, missing-shape, or unsupported-family cases stay on their
+   explicit compatibility path rather than silently entering the covered
+   shape-preserving path.
+4. Keep backward compatibility preserved and explicit:
+   compatibility behavior remains required, but compatibility behavior is not
+   the semantic source of truth and must not become the default for covered
+   semantic cases that already satisfy the shape-preserving contract.
+5. Extend bounded tests and workflow docs so supported versus unsupported
+   rollout coverage is stated honestly and one covered compatibility case plus
+   one unsupported-or-fallback case are locked down without widening into
+   Phase 7 regression expansion.
+6. Do not remove broad legacy paths, widen family support beyond the covered
+   seam, redesign framework or builder ownership, or reopen the Phase 2-5
+   semantics/geometry contract.
 
 Executor handoff constraints:
 
-- Allowed files: optimizer.py, optimizer_contract.py, builder.py, tests/, workflow markdown files only.
-- Required outcome: compatibility remains preserved and rollout is bounded.
-- Required compatibility statement: supported versus unsupported cases are documented honestly.
-- Stop rule: stop immediately if the work widens into framework redesign, broad legacy-path removal,
-  or unbounded rollout expansion.
+- Allowed files:
+  `src/mofbuilder/core/optimizer.py`,
+  `src/mofbuilder/core/optimizer_contract.py`,
+  `src/mofbuilder/core/builder.py`,
+  `tests/`, and workflow markdown files only.
+- Required audit targets:
+  `compile_local_rigid_initialization`,
+  `_extract_orientation_pair_points`,
+  `_compile_role_aware_initial_rotations`,
+  `MetalOrganicFrameworkBuilder._build_target_anchor_payload`, and the
+  existing role-aware compatibility regressions in
+  `tests/test_core_optimizer.py`.
+- Required outcome: compatibility remains preserved for legacy literal-`X`
+  and already-supported covered families, while unsupported or missing-shape
+  cases are kept on an explicit bounded fallback path rather than entering the
+  covered shape-preserving rollout accidentally.
+- Required compatibility statement: supported versus unsupported cases are
+  documented honestly; backward compatibility remains required, but
+  compatibility behavior is not the semantic source of truth.
+- Stop rule: stop immediately if the work widens into framework redesign,
+  broad legacy-path removal, new family support beyond the covered seam,
+  Phase 7 regression expansion, or unbounded rollout changes.
+
+Implementation-ready execution checklist for this phase only:
+
+1. Trace only the bounded compatibility seam in
+   `src/mofbuilder/core/optimizer_contract.py`,
+   `src/mofbuilder/core/optimizer.py`,
+   `src/mofbuilder/core/builder.py`, and
+   `tests/test_core_optimizer.py`,
+   starting from the Phase 3 shape-preserving orientation-pair inputs and the
+   Phase 5 guarded local placement selection path.
+2. Identify the exact conditions that define covered rollout eligibility for
+   the shape-preserving path:
+   builder-compiled `source_anchor_vector`,
+   `target_anchor_direction`,
+   `slot_radius`, and the already-supported family/role cases proven in Phases
+   2-5.
+3. Add only the bounded rollout guard(s) needed so uncovered family shapes,
+   legacy literal-`X`, absent-shape payloads, or other unsupported cases keep
+   their explicit compatibility fallback and do not silently inherit covered
+   Phase 2-5 behavior.
+4. Keep the ownership seam and invariants unchanged:
+   graph/topology remains the source of truth,
+   builder owns semantics,
+   optimizer consumes compiled semantics,
+   framework remains role-agnostic,
+   semantics still precede geometry,
+   null edge remains distinct from zero-length real edge.
+5. Extend only bounded compatibility coverage in
+   `tests/test_core_optimizer.py`
+   with one regression proving a supported covered family still uses the
+   shape-preserving rollout path and one regression proving a legacy or
+   unsupported case stays on the explicit compatibility path.
+6. Update workflow docs only as needed to state supported versus unsupported
+   rollout coverage honestly, including any bounded guard condition or
+   unsupported-family note introduced by this phase.
+7. Validate targeted Phase 6 coverage only, then stop as soon as compatibility
+   remains preserved, rollout conditions are explicit, and later Phase 7
+   regression/debug expansion is still pending work.
 
 # Phase 7 — Regression Coverage, Debug Surfaces, and Handoff
 

@@ -17,6 +17,7 @@ from .superimpose import svd_superimpose
 
 
 FrozenMapping = Mapping[str, Any]
+SUPPORTED_SHAPE_PRESERVING_ROLLOUT_FAMILIES = frozenset({"ROLE-AWARE"})
 
 
 def _freeze_value(value: Any) -> Any:
@@ -641,6 +642,99 @@ def _extract_shape_preserving_orientation_pair_points(
     )
 
 
+def _is_legacy_literal_x_compatibility_slot_rule(slot_rule: FrozenMapping) -> bool:
+    if slot_rule.get("anchor_resolution_mode") == "legacy_literal_X_compatibility":
+        return True
+    source_atom_type = slot_rule.get("source_atom_type")
+    anchor_source_type = slot_rule.get("anchor_source_type")
+    return source_atom_type == "X" or anchor_source_type == "X"
+
+
+def evaluate_shape_preserving_rollout_eligibility(
+    semantic_snapshot: OptimizationSemanticSnapshot,
+    node_contract: NodePlacementContract,
+    correspondences: Optional[Tuple[LegalNodeCorrespondence, ...]] = None,
+) -> Dict[str, Any]:
+    family_name = str(semantic_snapshot.family_name or "")
+    if family_name not in SUPPORTED_SHAPE_PRESERVING_ROLLOUT_FAMILIES:
+        return {
+            "eligible": False,
+            "fallback_reason": "unsupported_family",
+            "family_name": family_name,
+            "checked_orientation_only_requirement_count": 0,
+        }
+
+    legal_correspondences = correspondences or ()
+    if not legal_correspondences:
+        return {
+            "eligible": True,
+            "fallback_reason": None,
+            "family_name": family_name,
+            "checked_orientation_only_requirement_count": 0,
+        }
+
+    requirement_by_edge_id = {
+        requirement.edge_id: requirement for requirement in node_contract.incident_requirements
+    }
+    checked_orientation_only_requirement_count = 0
+
+    for correspondence in legal_correspondences:
+        for assignment in correspondence.assignments:
+            requirement = requirement_by_edge_id[assignment.edge_id]
+            if not _is_orientation_only_requirement(requirement):
+                continue
+
+            checked_orientation_only_requirement_count += 1
+            slot_rule = node_contract.slot_rules[assignment.slot_index]
+
+            if _is_legacy_literal_x_compatibility_slot_rule(slot_rule):
+                return {
+                    "eligible": False,
+                    "fallback_reason": "legacy_literal_X_compatibility",
+                    "family_name": family_name,
+                    "checked_orientation_only_requirement_count": (
+                        checked_orientation_only_requirement_count
+                    ),
+                }
+
+            source_anchor_vector = _extract_source_anchor_vector(slot_rule)
+            slot_radius = _resolve_source_slot_radius(
+                slot_rule,
+                requirement,
+                node_contract.node_id,
+            )
+            if source_anchor_vector is None or slot_radius is None:
+                return {
+                    "eligible": False,
+                    "fallback_reason": "missing_source_anchor_shape",
+                    "family_name": family_name,
+                    "checked_orientation_only_requirement_count": (
+                        checked_orientation_only_requirement_count
+                    ),
+                }
+
+            target_anchor_direction = _extract_target_direction_vector(
+                requirement,
+                node_contract.node_id,
+            )
+            if target_anchor_direction is None:
+                return {
+                    "eligible": False,
+                    "fallback_reason": "missing_target_anchor_direction",
+                    "family_name": family_name,
+                    "checked_orientation_only_requirement_count": (
+                        checked_orientation_only_requirement_count
+                    ),
+                }
+
+    return {
+        "eligible": True,
+        "fallback_reason": None,
+        "family_name": family_name,
+        "checked_orientation_only_requirement_count": checked_orientation_only_requirement_count,
+    }
+
+
 def _rotation_matrix_from_vector(rotation_vector: np.ndarray) -> np.ndarray:
     theta = float(np.linalg.norm(rotation_vector))
     if theta <= 1.0e-12:
@@ -982,6 +1076,11 @@ def compile_local_rigid_initialization(
                 "single legal correspondence is required for deterministic local rigid initialization."
             )
         selected_correspondence = correspondences[0]
+    rollout_eligibility = evaluate_shape_preserving_rollout_eligibility(
+        semantic_snapshot,
+        contract,
+        correspondences=(selected_correspondence,),
+    )
 
     requirement_by_edge_id = {
         requirement.edge_id: requirement for requirement in contract.incident_requirements
@@ -1172,6 +1271,9 @@ def compile_local_rigid_initialization(
             "legacy_orientation_proxy_pair_count": legacy_orientation_proxy_pair_count,
             "orientation_only_pair_count": orientation_only_pair_count,
             "orientation_only_anchor_fallback_count": fallback_orientation_anchor_count,
+            "shape_preserving_rollout_eligible": rollout_eligibility["eligible"],
+            "shape_preserving_rollout_fallback_reason": rollout_eligibility["fallback_reason"],
+            "shape_preserving_rollout_family_name": rollout_eligibility["family_name"],
             "svd_point_pair_count": len(rotation_source_points),
             "translation_mode": (
                 "real_anchor_centroid"

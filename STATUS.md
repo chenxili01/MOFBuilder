@@ -1,7 +1,7 @@
 ## Workflow Status
 
-- Phase: Phase 5
-- Checkpoint: phase-5-complete
+- Phase: Phase 6
+- Checkpoint: phase-6-complete
 - Status: COMPLETE
 - Next step: planner
 - Last update: 2026-03-16
@@ -18,24 +18,21 @@ degrading already-valid semantic seed rotations in covered cases.
 
 ## Current Focus
 
-Phase 5 is complete.
-`src/mofbuilder/core/optimizer.py` now keeps a covered Phase 4
-`role-aware seed rotation` when the downstream geometry-only refinement drifts
-away from a shape-preserving semantic seed backed by builder-compiled anchor
-inputs, while uncovered cases and explicit compatibility fallback cases remain
-on the downstream refinement path.
-The covered guard is narrow: it applies only when the rigid seed carries
-`shape-preserving pseudo anchor` support and does not depend on the
-`legacy uniform-scale orientation proxy`.
-Role-aware debug records now state whether the selected pose came from the
-`rigid_seed` or `downstream_refinement`, whether the node was a covered
-shape-preserving case, and the bounded guard reason when the seed was
-preserved.
-`tests/test_core_optimizer.py` now includes a bounded regression that forces a
-covered downstream refinement drift and proves the semantic seed is preserved.
-The next workflow step is Phase 6 planning only: compatibility-layer and
-rollout work must remain bounded, explicit, and separate from this completed
-Phase 5 guard.
+Phase 6 is complete.
+`src/mofbuilder/core/optimizer_contract.py` now evaluates bounded
+shape-preserving rollout eligibility before covered role-aware initialization:
+the rollout remains limited to the already-supported `ROLE-AWARE` family seam,
+and it requires builder-compiled `source_anchor_vector`,
+`target_anchor_direction`, and `slot_radius` semantics on covered
+orientation-only assignments.
+`src/mofbuilder/core/optimizer.py` now keeps legacy literal-`X`,
+missing-shape, missing-target-direction, and unsupported-family cases on an
+explicit compatibility fallback path instead of letting them silently enter the
+covered shape-preserving rollout, and the Phase 5 seed-preservation guard no
+longer treats unsupported rollout seeds as covered.
+`tests/test_core_optimizer.py` now locks down one supported covered rollout
+case and one explicit legacy literal-`X` fallback case.
+Phase 7 remains pending for broader regression/debug expansion only.
 
 ## Phase 1 Contract
 
@@ -57,9 +54,10 @@ Required terminology:
 
 ## Next Step
 
-1. Planner must prepare Phase 6 only.
-2. Keep Phase 6 bounded to compatibility-layer and rollout behavior in the
-   allowed modules named by `PLAN.md` / `PHASE_SPEC.md`.
+1. Planner must prepare Phase 7 only.
+2. Keep Phase 7 bounded to `tests/`, workflow markdown files, and
+   `src/mofbuilder/core/optimizer.py` only if a narrow explicit debug or
+   failure surface is required.
 3. Preserve the ownership seam unchanged:
    graph/topology is the source of truth, builder owns semantics, optimizer
    consumes compiled semantics, framework remains role-agnostic.
@@ -67,7 +65,13 @@ Required terminology:
    semantics still precede geometry, null edge remains distinct from
    zero-length real edge, and backward compatibility remains required but is
    not the semantic source of truth.
-5. Do not reopen Phase 5 implementation work unless a bounded defect is found.
+5. Keep supported versus unsupported rollout coverage documented honestly:
+   covered rollout remains limited to the bounded `ROLE-AWARE` seam, while
+   legacy literal-`X`, missing-shape, missing-target-direction, and
+   unsupported-family cases remain explicit compatibility fallbacks.
+6. Add only bounded Phase 7 regression coverage, inspectable debug/failure
+   surfaces, and handoff notes; do not widen rollout scope or introduce new
+   family support.
 
 ## Invariants
 
