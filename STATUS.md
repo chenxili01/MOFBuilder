@@ -1,9 +1,9 @@
 ## Workflow Status
 
-- Phase: Phase 4
-- Checkpoint: phase-4-ready
-- Status: READY_FOR_EXECUTION
-- Next step: executor
+- Phase: Phase 5
+- Checkpoint: phase-4-complete
+- Status: READY_FOR_PLANNING
+- Next step: planner
 - Last update: 2026-03-16
 
 ## Branch
@@ -18,19 +18,22 @@ degrading already-valid semantic seed rotations in covered cases.
 
 ## Current Focus
 
-Phase 3 is complete.
-Covered orientation-only pair construction in
-`src/mofbuilder/core/optimizer_contract.py` now preserves the real
-`source_anchor_vector` and matching `slot_radius` when building each
-`shape-preserving pseudo anchor`, while keeping the
-`legacy uniform-scale orientation proxy` as an explicit fallback only when
-source-shape data is unavailable.
-Phase 4 is now planned and ready for execution.
-The active handoff is limited to the covered local rigid/SVD initialization
-path in `src/mofbuilder/core/optimizer_contract.py` and
-`src/mofbuilder/core/optimizer.py`, where the new shape-preserving orientation
-pairs must be consumed directly to stabilize the bounded `role-aware seed rotation`
-path without widening into downstream guarding.
+Phase 4 is complete.
+Covered local rigid/SVD initialization in
+`src/mofbuilder/core/optimizer_contract.py` now consumes the preserved
+`shape-preserving pseudo anchor` inputs directly in the bounded SVD point-pair
+cloud for covered semantic cases, including two-anchor cases where centroid-only
+anchor fitting collapses the local rotation cue to a single line.
+The covered seam now adds bounded shape-preserving orientation-support pairs
+from real `source_anchor_vector` / `slot_radius` geometry when
+`target_anchor_direction` data exists, keeps the
+`legacy uniform-scale orientation proxy` explicit only for covered
+orientation-only compatibility fallback, and exposes the local SVD composition
+through rigid-init/debug metadata without widening into downstream guarding.
+`tests/test_core_optimizer.py` now includes a stable typed/shape-aware local
+seed regression for this bounded seam.
+Phase 5 downstream refinement guarding remains pending and has not yet been
+implemented.
 
 ## Phase 1 Contract
 
@@ -50,39 +53,21 @@ Required terminology:
 - `role-aware seed rotation`
 - `legacy uniform-scale orientation proxy`
 
-## Executor Handoff
+## Next Step
 
-1. Stay within Phase 4 only. Allowed files are
-   `src/mofbuilder/core/optimizer.py`,
-   `src/mofbuilder/core/optimizer_contract.py`,
-   `tests/`, and workflow markdown files only.
-2. Audit the covered local rigid/SVD initialization path first:
-   `compile_local_rigid_initialization`,
-   `_fit_rotation_from_point_pairs`, and the immediate local-seed consumer path
-   in `src/mofbuilder/core/optimizer.py`.
-   Do not widen into builder changes, framework changes, global candidate
-   ranking, or downstream refinement guarding.
-3. Ensure the covered SVD input cloud consumes the Phase 3
-   `shape-preserving pseudo anchor` pairs together with the preserved real
-   source-anchor geometry so the bounded local initialization uses direction
-   plus source-shape geometry directly.
-4. Keep compatibility behavior explicit and bounded.
-   Backward compatibility remains required, but compatibility behavior is not
-   the semantic source of truth.
-5. Extend only the bounded regression coverage for this phase.
-   Update `tests/test_core_optimizer.py` with one stable typed/shape-aware
-   initialization case that proves the covered local SVD path consumes the
-   shape-preserving orientation inputs.
-6. Keep the ownership seam unchanged throughout:
+1. Planner must prepare the Phase 5 handoff only.
+2. The next bounded target is downstream optimizer-stage guarding for covered
+   semantic seed rotations in `src/mofbuilder/core/optimizer.py`, `tests/`,
+   and workflow markdown files only.
+3. Do not reopen builder ownership, framework behavior, graph grammar, global
+   candidate ranking, or broad optimizer-pipeline redesign while planning the
+   next phase.
+4. Keep the ownership seam unchanged:
    graph/topology is the source of truth, builder owns semantics, optimizer
    consumes compiled semantics, framework remains role-agnostic.
-   Semantics still precede geometry, and null edge remains distinct from
-   zero-length real edge.
-7. Stop immediately once covered local rigid/SVD initialization consumes
-   direction plus source-shape geometry in the bounded seam and the regression
-   coverage is updated.
-   Do not widen into Phase 5 downstream guarding, framework changes, graph
-   grammar changes, or broad optimizer-pipeline redesign.
+   Semantics still precede geometry, null edge remains distinct from
+   zero-length real edge, and backward compatibility remains required but is
+   not the semantic source of truth.
 
 ## Invariants
 

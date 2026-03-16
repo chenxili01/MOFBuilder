@@ -326,6 +326,42 @@ Executor handoff constraints:
 - Stop rule: stop immediately if the work widens into downstream optimizer-stage guarding,
   framework redesign, or global optimizer-objective redesign.
 
+Implementation-ready execution checklist for this phase only:
+
+1. Trace only the covered Phase 4 seam in
+   `src/mofbuilder/core/optimizer_contract.py`,
+   `src/mofbuilder/core/optimizer.py`, and
+   `tests/test_core_optimizer.py`,
+   starting with `compile_local_rigid_initialization`,
+   `_fit_rotation_from_point_pairs`, and the immediate local-seed consumer path.
+2. Change only the bounded local rigid/SVD initialization payload flow so the
+   point-pair cloud passed into covered SVD fitting uses the Phase 3
+   `shape-preserving pseudo anchor` data together with the preserved real
+   `source_anchor_vector` / `slot_radius` geometry instead of falling back to
+   the `legacy uniform-scale orientation proxy` when covered shape data exists.
+3. Keep the ownership seam unchanged:
+   graph/topology remains the source of truth,
+   builder owns semantics,
+   optimizer consumes compiled semantics,
+   framework remains role-agnostic.
+   Semantics still precede geometry, and null edge remains distinct from
+   zero-length real edge.
+4. Keep compatibility behavior explicit and bounded in the local seam only.
+   Backward compatibility remains required, but compatibility behavior is not
+   the semantic source of truth.
+   If covered shape data is absent, preserve the existing fallback rather than
+   widening scope in this phase.
+5. Extend only bounded regression coverage in `tests/test_core_optimizer.py`
+   with one stable typed/shape-aware initialization case that proves the
+   covered local SVD path consumes the shape-preserving orientation inputs and
+   yields a stable `role-aware seed rotation`.
+6. Validate with targeted Phase 4 coverage only, then stop as soon as the
+   covered local SVD seam consumes direction plus source-shape geometry and the
+   bounded regression passes.
+7. Do not add Phase 5 downstream guarding, builder changes, framework changes,
+   graph grammar changes, global candidate-ranking changes, or broad optimizer
+   pipeline redesign in this phase.
+
 # Phase 5 — Optimizer Stage Guarding
 
 Guard downstream covered refinement stages so they do not degrade already-valid

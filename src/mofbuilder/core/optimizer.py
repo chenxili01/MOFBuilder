@@ -641,6 +641,22 @@ class NetOptimizer:
                 if refinement is not None
                 else 0
             ),
+            "shape_preserving_orientation_pair_count": (
+                refinement.rigid_initialization.metadata.get(
+                    "shape_preserving_orientation_pair_count",
+                    0,
+                )
+                if refinement is not None
+                else 0
+            ),
+            "legacy_orientation_proxy_pair_count": (
+                refinement.rigid_initialization.metadata.get(
+                    "legacy_orientation_proxy_pair_count",
+                    0,
+                )
+                if refinement is not None
+                else 0
+            ),
             "null_edge_count": null_edge_count,
             "alignment_only_count": alignment_only_count,
             "resolve_mode_hints": resolve_mode_hints,

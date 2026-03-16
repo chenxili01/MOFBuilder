@@ -580,22 +580,20 @@ def _extract_orientation_pair_points(
     requirement: IncidentEdgePlacementRequirement,
     local_node_id: str,
 ) -> Tuple[Tuple[Tuple[float, float, float], Tuple[float, float, float]], ...]:
+    shape_preserving_pairs = _extract_shape_preserving_orientation_pair_points(
+        slot_rule,
+        requirement,
+        local_node_id,
+    )
+    if shape_preserving_pairs:
+        return shape_preserving_pairs
+
     target_direction = _extract_target_direction_vector(requirement, local_node_id)
+    if target_direction is None:
+        return ()
     normalized_target = _normalize_vector(np.asarray(target_direction, dtype=float))
     if normalized_target is None:
         return ()
-
-    source_anchor_vector = _extract_source_anchor_vector(slot_rule)
-    slot_radius = _resolve_source_slot_radius(slot_rule, requirement, local_node_id)
-    if source_anchor_vector is not None and slot_radius is not None:
-        positive_source = tuple(float(value) for value in source_anchor_vector)
-        positive_target = tuple(float(value) for value in normalized_target * slot_radius)
-        negative_source = tuple(float(value) for value in -np.asarray(source_anchor_vector, dtype=float))
-        negative_target = tuple(float(value) for value in -normalized_target * slot_radius)
-        return (
-            (positive_source, positive_target),
-            (negative_source, negative_target),
-        )
 
     source_direction = _extract_source_direction(slot_rule)
     if source_direction is None:
@@ -610,6 +608,33 @@ def _extract_orientation_pair_points(
     positive_target = tuple(float(value) for value in normalized_target * scale)
     negative_source = tuple(float(value) for value in -normalized_source * scale)
     negative_target = tuple(float(value) for value in -normalized_target * scale)
+    return (
+        (positive_source, positive_target),
+        (negative_source, negative_target),
+    )
+
+
+def _extract_shape_preserving_orientation_pair_points(
+    slot_rule: FrozenMapping,
+    requirement: IncidentEdgePlacementRequirement,
+    local_node_id: str,
+) -> Tuple[Tuple[Tuple[float, float, float], Tuple[float, float, float]], ...]:
+    target_direction = _extract_target_direction_vector(requirement, local_node_id)
+    if target_direction is None:
+        return ()
+    normalized_target = _normalize_vector(np.asarray(target_direction, dtype=float))
+    if normalized_target is None:
+        return ()
+
+    source_anchor_vector = _extract_source_anchor_vector(slot_rule)
+    slot_radius = _resolve_source_slot_radius(slot_rule, requirement, local_node_id)
+    if source_anchor_vector is None or slot_radius is None:
+        return ()
+
+    positive_source = tuple(float(value) for value in source_anchor_vector)
+    positive_target = tuple(float(value) for value in normalized_target * slot_radius)
+    negative_source = tuple(float(value) for value in -np.asarray(source_anchor_vector, dtype=float))
+    negative_target = tuple(float(value) for value in -normalized_target * slot_radius)
     return (
         (positive_source, positive_target),
         (negative_source, negative_target),
@@ -968,19 +993,39 @@ def compile_local_rigid_initialization(
     orientation_target_points = []
     orientation_only_pair_count = 0
     fallback_orientation_anchor_count = 0
+    shape_preserving_orientation_pair_count = 0
+    stable_shape_support_pair_count = 0
+    legacy_orientation_proxy_pair_count = 0
 
     for assignment in selected_correspondence.assignments:
         requirement = requirement_by_edge_id[assignment.edge_id]
         slot_rule = contract.slot_rules[assignment.slot_index]
         orientation_only_pairs = ()
+        shape_preserving_pairs = ()
         if _is_orientation_only_requirement(requirement):
             orientation_only_pairs = _extract_orientation_pair_points(
                 slot_rule,
                 requirement,
                 contract.node_id,
             )
+            if orientation_only_pairs:
+                shape_preserving_pairs = _extract_shape_preserving_orientation_pair_points(
+                    slot_rule,
+                    requirement,
+                    contract.node_id,
+                )
+        else:
+            shape_preserving_pairs = _extract_shape_preserving_orientation_pair_points(
+                slot_rule,
+                requirement,
+                contract.node_id,
+            )
         if orientation_only_pairs:
             orientation_only_pair_count += len(orientation_only_pairs)
+            if shape_preserving_pairs:
+                shape_preserving_orientation_pair_count += len(orientation_only_pairs)
+            else:
+                legacy_orientation_proxy_pair_count += len(orientation_only_pairs)
             for pair_index, (source_anchor, target_anchor) in enumerate(orientation_only_pairs):
                 orientation_source_points.append(source_anchor)
                 orientation_target_points.append(target_anchor)
@@ -996,6 +1041,11 @@ def compile_local_rigid_initialization(
                             "resolve_mode": assignment.resolve_mode,
                             "is_null_edge": assignment.is_null_edge,
                             "pair_kind": "orientation_only",
+                            "orientation_geometry_mode": (
+                                "shape-preserving pseudo anchor"
+                                if shape_preserving_pairs
+                                else "legacy uniform-scale orientation proxy"
+                            ),
                             "orientation_pair_index": pair_index,
                             "null_payload_model": requirement.null_payload_model,
                         },
@@ -1017,6 +1067,32 @@ def compile_local_rigid_initialization(
         translation_target_points.append(target_anchor)
         if _is_orientation_only_requirement(requirement):
             fallback_orientation_anchor_count += 1
+        elif shape_preserving_pairs:
+            stable_shape_support_pair_count += len(shape_preserving_pairs)
+            shape_preserving_orientation_pair_count += len(shape_preserving_pairs)
+            for pair_index, (shape_source_anchor, shape_target_anchor) in enumerate(
+                shape_preserving_pairs
+            ):
+                orientation_source_points.append(shape_source_anchor)
+                orientation_target_points.append(shape_target_anchor)
+                anchor_pairs.append(
+                    RigidAnchorPair(
+                        edge_id=assignment.edge_id,
+                        slot_index=assignment.slot_index,
+                        source_anchor=shape_source_anchor,
+                        target_anchor=shape_target_anchor,
+                        metadata={
+                            "slot_type": assignment.slot_type,
+                            "path_type": assignment.path_type,
+                            "resolve_mode": assignment.resolve_mode,
+                            "is_null_edge": assignment.is_null_edge,
+                            "pair_kind": "shape_preserving_orientation_support",
+                            "orientation_geometry_mode": "shape-preserving pseudo anchor",
+                            "orientation_pair_index": pair_index,
+                            "consumed_by": "local_svd_rotation_cloud",
+                        },
+                    )
+                )
         anchor_pairs.append(
             RigidAnchorPair(
                 edge_id=assignment.edge_id,
@@ -1074,22 +1150,29 @@ def compile_local_rigid_initialization(
         rmsd=float(rmsd),
         source_anchor_representation=(
             "node slot_rules[*]['anchor_vector'|'anchor_point'|'anchor_position'] "
-            "provide node-local source anchors; orientation-only null/alignment edges "
-            "preserve real source-anchor vectors and build centered shape-preserving "
-            "pseudo-anchor pairs, falling back to normalized direction proxies only "
-            "when source-shape data is unavailable."
+            "provide node-local source anchors; covered local SVD initialization "
+            "adds centered shape-preserving pseudo-anchor pairs from real "
+            "source_anchor_vector/slot_radius geometry when target_anchor_direction "
+            "is available, while orientation-only null/alignment edges still fall "
+            "back to normalized direction proxies only when source-shape data is "
+            "unavailable."
         ),
         target_anchor_representation=(
             "compiled target_direction metadata carries edge-local target anchors via "
-            "constraint or edge metadata target_* fields; orientation-only null/alignment "
-            "edges prefer target_anchor_direction/target_direction data scaled by the "
-            "matching source-side slot radius without contributing linker-length translation."
+            "constraint or edge metadata target_* fields; covered local SVD uses "
+            "target_anchor_direction/target_direction data to build shape-preserving "
+            "pseudo anchors with the matching source-side slot radius without "
+            "contributing linker-length translation."
         ),
         metadata={
             "anchor_count": len(anchor_pairs),
             "real_anchor_pair_count": len(translation_source_points),
+            "shape_preserving_orientation_pair_count": shape_preserving_orientation_pair_count,
+            "stable_shape_support_pair_count": stable_shape_support_pair_count,
+            "legacy_orientation_proxy_pair_count": legacy_orientation_proxy_pair_count,
             "orientation_only_pair_count": orientation_only_pair_count,
             "orientation_only_anchor_fallback_count": fallback_orientation_anchor_count,
+            "svd_point_pair_count": len(rotation_source_points),
             "translation_mode": (
                 "real_anchor_centroid"
                 if translation_source_points
