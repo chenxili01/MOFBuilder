@@ -71,3 +71,63 @@ Implemented Phase 1 only. In [builder.py](/Users/chenxili/GitHub/Cursor_repo/mof
 I added focused coverage in [test_core_builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_builder.py#L209) and [test_core_builder.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_builder.py#L551), and updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md#L3) and [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md#L29) to mark Phase 1 complete.
 
 Validation: `python -m py_compile src/mofbuilder/core/builder.py tests/test_core_builder.py` passed. Full runtime tests were not runnable here because `pytest` is unavailable and the environment is missing package dependencies such as `networkx`.
+
+
+## planner-run
+
+- Timestamp: 2026-03-16T16:09:28+00:00
+
+Active phase is Phase 2. I tightened the Phase 2 handoff in [PLAN.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/PLAN.md), expanded [PHASE_SPEC.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/PHASE_SPEC.md) into an execution-ready single-phase spec with explicit optimizer touchpoints, forbidden changes, and validation targets, and updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) to `READY FOR EXECUTION` with `Next step: executor`.
+
+The plan stays bounded to optimizer compatibility only: preserve `node_X_pos_dict` as the legacy contract, allow typed attachment tables only as an upstream source for stable flattened rows, and defer any slot-resolution or placement-policy work to Phase 3.
+
+Verification: reviewed the diff for planning artifacts only; no implementation files were changed and no tests were run.
+
+date:
+2026-03-16 17:15 CET
+role:
+Executor
+title:
+Phase 2 optimizer compatibility
+
+branch:
+typed-attachment-slots
+phase:
+Phase 2
+checkpoint:
+optimizer compatibility complete
+
+summary:
+Updated optimizer fragment payload preparation so builder-owned attachment metadata and lookup sidecars remain passive compatibility context while controlling the flattened attachment-row order consumed by geometry code. Preserved the legacy flat `x_coords` and `node_X_pos_dict` interface, derived fallback metadata for legacy `X`-only inputs, and made rotated attachment lookup generation reuse the same flattened row order.
+
+files touched:
+src/mofbuilder/core/optimizer.py
+tests/test_core_optimizer.py
+STATUS.md
+WORKLOG.md
+
+invariants checked:
+- topology remains the source of truth
+- builder remains the owner of attachment semantics and metadata
+- optimizer changes stay limited to geometry-compatible payload normalization and lookup propagation
+- `node_X_pos_dict` remains available and backward compatibility is preserved
+
+validation:
+- `python -m py_compile src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- `python -m pytest tests/test_core_optimizer.py -k "preserves_builder_defined_attachment_row_order or derives_legacy_x_attachment_metadata or preserves_row_alignment_through_rotation"` failed because `pytest` is not installed
+- `python - <<'PY' ... PY` targeted runtime exercise failed because `networkx` is not installed in the environment
+
+notes:
+- Added targeted optimizer coverage for builder-defined typed row ordering, legacy flat `X` metadata derivation, and rotated attachment lookup alignment.
+- Runtime validation is still partially blocked by missing test/runtime dependencies, so only static compilation succeeded here.
+
+
+## executor-run
+
+- Timestamp: 2026-03-16T16:16:41+00:00
+
+Implemented Phase 2 only. In [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py#L1131) the optimizer now carries passive attachment metadata/lookups through fragment payload preparation, flattens typed attachment rows by builder-defined `row_index` instead of re-sorting types, derives legacy `X` metadata when only flat anchors exist, and reuses that same flattened order when building rotated attachment lookups at [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py#L1552). The legacy flat `x_coords` / `node_X_pos_dict` contract remains intact.
+
+I added targeted Phase 2 coverage in [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py#L2549) for builder-defined typed row ordering, legacy flat `X` fallback metadata, and rotated lookup alignment, and updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md#L3) and [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md#L86) to mark Phase 2 complete.
+
+Validation: `python -m py_compile src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py` passed. I could not run runtime tests here because `pytest` is not installed, and a direct Python exercise is blocked by missing `networkx`.

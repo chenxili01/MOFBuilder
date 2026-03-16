@@ -1,10 +1,10 @@
 # STATUS.md
 
-- Phase: Phase 1
-- Checkpoint: metadata structure initialization complete
-- Status: COMPLETE
-- Next step: planner handoff for Phase 2
-- Last update: 2026-03-16 17:06 CET
+- Phase: Phase 2
+- Checkpoint: phase-2-complete
+- Status: COMPLETED
+- Next step: planner
+- Last update: 2026-03-16
 
 ---
 
@@ -14,7 +14,9 @@ Objective:
 Preserve heterogeneous attachment slot identity.
 
 Current focus:
-Phase 1 complete. Builder metadata structures now preserve typed attachment row identity alongside legacy flat anchor inputs.
+Phase 2 complete. Optimizer fragment preparation now preserves builder-defined
+attachment row ordering while keeping the legacy flat-anchor interface and
+legacy `X` fallback behavior intact.
 
 Invariants:
 - topology source of truth

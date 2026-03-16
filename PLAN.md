@@ -74,10 +74,24 @@ Goal:
 Ensure optimizer consumes flat anchors while metadata persists.
 
 Scope:
-- maintain vector extraction compatibility
+- normalize optimizer fragment payload preparation so heterogeneous typed attachment
+  tables still compile into the legacy flat anchor arrays consumed by rotation,
+  cell, and target-length optimization
+- preserve flattened row ordering between builder-owned attachment metadata and
+  optimizer-generated attachment position dictionaries
+- keep optimizer geometry operations role-agnostic while allowing passive
+  metadata-derived lookup construction to survive scaling and rotation
 
 Not doing:
-- semantic placement
+- semantic placement changes
+- builder metadata schema changes
+- topology redesign
+
+Execution notes:
+- `node_X_pos_dict` remains the optimizer compatibility contract
+- typed attachment tables are only an upstream source for compiling stable flat
+  anchor rows
+- legacy `X`-only inputs must keep their current fallback behavior
 
 ---
 

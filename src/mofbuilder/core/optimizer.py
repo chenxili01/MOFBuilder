@@ -1134,6 +1134,8 @@ class NetOptimizer:
                                       *,
                                       attachment_data_by_type=None,
                                       attachment_coords_by_type=None,
+                                      attachment_metadata=None,
+                                      attachment_lookup=None,
                                       linker_frag_length=None,
                                       fake_edge=False):
         normalized_attachment_coords = self._resolve_attachment_coords_by_type(
@@ -1141,7 +1143,17 @@ class NetOptimizer:
             attachment_data_by_type=attachment_data_by_type,
             fallback_x_data=x_data,
         )
-        x_coords = self._flatten_attachment_coords(normalized_attachment_coords)
+        normalized_attachment_metadata, normalized_attachment_lookup = (
+            self._resolve_attachment_metadata(
+                attachment_metadata=attachment_metadata,
+                attachment_lookup=attachment_lookup,
+                attachment_coords_by_type=normalized_attachment_coords,
+            )
+        )
+        x_coords = self._flatten_attachment_coords(
+            normalized_attachment_coords,
+            attachment_metadata=normalized_attachment_metadata,
+        )
         assert_msg_critical(
             data is not None and x_coords is not None and x_coords.shape[0] > 0,
             "Optimizer fragment payload is missing atom or attachment coordinate data.")
@@ -1150,6 +1162,8 @@ class NetOptimizer:
             "coords": data[:, 5:8].astype(float),
             "x_coords": x_coords,
             "attachment_coords_by_type": normalized_attachment_coords,
+            "attachment_metadata": normalized_attachment_metadata,
+            "attachment_lookup": normalized_attachment_lookup,
             "linker_frag_length": linker_frag_length,
             "fake_edge": fake_edge,
         }
@@ -1213,18 +1227,143 @@ class NetOptimizer:
             fallback_x_coords=fallback_x_coords,
         )
 
-    def _flatten_attachment_coords(self, attachment_coords_by_type):
-        if not attachment_coords_by_type:
-            return None
-        flattened_coords = []
-        for atom_type in sorted(attachment_coords_by_type):
+    def _normalize_attachment_metadata(self, attachment_metadata):
+        normalized = []
+        for entry in attachment_metadata or ():
+            if entry is None:
+                continue
+            row_index = entry.get("row_index")
+            slot_type = entry.get("slot_type")
+            slot_ordinal = entry.get("slot_ordinal")
+            if row_index is None or slot_type is None or slot_ordinal is None:
+                continue
+            normalized.append({
+                "slot_type": str(slot_type),
+                "slot_ordinal": int(slot_ordinal),
+                "row_index": int(row_index),
+            })
+        normalized.sort(
+            key=lambda item: (
+                item["row_index"],
+                item["slot_type"],
+                item["slot_ordinal"],
+            )
+        )
+        return tuple(normalized)
+
+    def _compile_attachment_metadata_from_lookup(self, attachment_lookup):
+        normalized = []
+        for descriptor, row_index in (attachment_lookup or {}).items():
+            if not isinstance(descriptor, tuple) or len(descriptor) != 2:
+                continue
+            slot_type, slot_ordinal = descriptor
+            normalized.append({
+                "slot_type": str(slot_type),
+                "slot_ordinal": int(slot_ordinal),
+                "row_index": int(row_index),
+            })
+        normalized.sort(
+            key=lambda item: (
+                item["row_index"],
+                item["slot_type"],
+                item["slot_ordinal"],
+            )
+        )
+        return tuple(normalized)
+
+    def _compile_attachment_lookup_from_metadata(self, attachment_metadata):
+        return {
+            (entry["slot_type"], entry["slot_ordinal"]): entry["row_index"]
+            for entry in attachment_metadata
+        }
+
+    def _compile_attachment_metadata_from_coords(self, attachment_coords_by_type):
+        metadata = []
+        lookup = {}
+        row_index = 0
+        for slot_type in sorted(attachment_coords_by_type or {}):
             coords = np.asarray(
-                attachment_coords_by_type[atom_type],
+                attachment_coords_by_type[slot_type],
                 dtype=float,
             ).reshape(-1, 3)
             if coords.size == 0:
                 continue
-            flattened_coords.append(coords)
+            for slot_ordinal in range(coords.shape[0]):
+                entry = {
+                    "slot_type": str(slot_type),
+                    "slot_ordinal": int(slot_ordinal),
+                    "row_index": int(row_index),
+                }
+                metadata.append(entry)
+                lookup[(entry["slot_type"], entry["slot_ordinal"])] = entry["row_index"]
+                row_index += 1
+        return tuple(metadata), lookup
+
+    def _validate_attachment_metadata_row_indices(self, attachment_metadata):
+        if not attachment_metadata:
+            return
+        row_indices = tuple(entry["row_index"] for entry in attachment_metadata)
+        assert_msg_critical(
+            row_indices == tuple(range(len(attachment_metadata))),
+            "Optimizer attachment metadata row indices must remain contiguous and aligned with flattened attachment rows.",
+        )
+
+    def _resolve_attachment_metadata(self,
+                                     *,
+                                     attachment_metadata=None,
+                                     attachment_lookup=None,
+                                     attachment_coords_by_type=None):
+        normalized_attachment_metadata = self._normalize_attachment_metadata(
+            attachment_metadata
+        )
+        if not normalized_attachment_metadata:
+            normalized_attachment_metadata = (
+                self._compile_attachment_metadata_from_lookup(
+                    attachment_lookup
+                )
+            )
+        if not normalized_attachment_metadata:
+            return self._compile_attachment_metadata_from_coords(
+                attachment_coords_by_type
+            )
+        self._validate_attachment_metadata_row_indices(
+            normalized_attachment_metadata
+        )
+        return (
+            normalized_attachment_metadata,
+            self._compile_attachment_lookup_from_metadata(
+                normalized_attachment_metadata
+            ),
+        )
+
+    def _flatten_attachment_coords(self,
+                                   attachment_coords_by_type,
+                                   *,
+                                   attachment_metadata=None):
+        if not attachment_coords_by_type:
+            return None
+        flattened_coords = []
+        if attachment_metadata:
+            for entry in attachment_metadata:
+                coords = np.asarray(
+                    attachment_coords_by_type.get(entry["slot_type"], ()),
+                    dtype=float,
+                ).reshape(-1, 3)
+                slot_ordinal = entry["slot_ordinal"]
+                assert_msg_critical(
+                    coords.shape[0] > slot_ordinal,
+                    "Optimizer attachment metadata does not align with attachment coordinates.",
+                )
+                flattened_coords.append(coords[slot_ordinal])
+        else:
+            for atom_type in sorted(attachment_coords_by_type):
+                coords = np.asarray(
+                    attachment_coords_by_type[atom_type],
+                    dtype=float,
+                ).reshape(-1, 3)
+                if coords.size == 0:
+                    continue
+                flattened_coords.append(coords)
         if not flattened_coords:
             return None
         return np.vstack(flattened_coords)
@@ -1294,6 +1433,12 @@ class NetOptimizer:
                     attachment_coords_by_type=role_entry.get(
                         "linker_center_attachment_coords_by_type"
                     ),
+                    attachment_metadata=role_entry.get(
+                        "linker_center_attachment_metadata"
+                    ),
+                    attachment_lookup=role_entry.get(
+                        "linker_center_attachment_lookup"
+                    ),
                 )
             return self._fragment_payload_from_arrays(
                 self.EC_data,
@@ -1314,6 +1459,10 @@ class NetOptimizer:
                 attachment_coords_by_type=role_entry.get(
                     "node_attachment_coords_by_type"
                 ),
+                attachment_metadata=role_entry.get(
+                    "node_attachment_metadata"
+                ),
+                attachment_lookup=role_entry.get("node_attachment_lookup"),
             )
         return self._fragment_payload_from_arrays(
             self.V_data,
@@ -1351,6 +1500,16 @@ class NetOptimizer:
                     x_data,
                     attachment_data_by_type=attachment_data_by_type,
                     attachment_coords_by_type=attachment_coords_by_type,
+                    attachment_metadata=(
+                        role_entry.get("linker_outer_attachment_metadata")
+                        if int(role_entry["linker_connectivity"]) > 2
+                        else role_entry.get("linker_center_attachment_metadata")
+                    ),
+                    attachment_lookup=(
+                        role_entry.get("linker_outer_attachment_lookup")
+                        if int(role_entry["linker_connectivity"]) > 2
+                        else role_entry.get("linker_center_attachment_lookup")
+                    ),
                     linker_frag_length=linker_frag_length,
                     fake_edge=bool(role_entry.get("linker_fake_edge", False)),
                 )
@@ -1395,20 +1554,22 @@ class NetOptimizer:
         metadata_by_node = {}
         for idx, node in enumerate(self.sorted_nodes):
             payload = self.node_fragment_payloads[node]
-            rows = []
-            metadata = []
-            for source_atom_type, coords in sorted(
-                payload.get("attachment_coords_by_type", {}).items()
-            ):
-                coords_array = np.asarray(coords, dtype=float).reshape(-1, 3)
-                for source_ordinal, coord in enumerate(coords_array):
-                    rows.append(sG.nodes[node]["ccoords"] + coord)
-                    metadata.append((len(rows) - 1, str(source_atom_type), source_ordinal))
-            if rows:
-                position_dict[idx] = self._addidx(np.asarray(rows, dtype=float))
-            else:
+            x_coords = np.asarray(
+                payload.get("x_coords", ()),
+                dtype=float,
+            ).reshape(-1, 3)
+            metadata = tuple(payload.get("attachment_metadata", ()))
+            assert_msg_critical(
+                x_coords.shape[0] == len(metadata),
+                "Optimizer attachment metadata count must align with flattened attachment coordinates.",
+            )
+            if x_coords.size == 0:
                 position_dict[idx] = np.empty((0, 4), dtype=float)
-            metadata_by_node[idx] = tuple(metadata)
+            else:
+                position_dict[idx] = self._addidx(
+                    sG.nodes[node]["ccoords"] + x_coords
+                )
+            metadata_by_node[idx] = metadata
         return position_dict, metadata_by_node
 
     def _apply_rotations_to_position_dict(self, optimized_rotations, G, position_dict):
@@ -1436,7 +1597,10 @@ class NetOptimizer:
             if positions is None or positions.size == 0:
                 lookup[node_id] = node_lookup
                 continue
-            for row_index, source_atom_type, source_ordinal in metadata:
+            for entry in metadata:
+                row_index = entry["row_index"]
+                source_atom_type = entry["slot_type"]
+                source_ordinal = entry["slot_ordinal"]
                 if row_index >= positions.shape[0]:
                     continue
                 node_lookup[(str(source_atom_type), int(source_ordinal))] = np.asarray(

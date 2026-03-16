@@ -2546,6 +2546,165 @@ def test_prepare_role_fragment_payloads_derive_typed_attachment_coords_from_atta
     )
 
 
+def test_prepare_role_fragment_payloads_preserves_builder_defined_attachment_row_order():
+    optimizer = opt.NetOptimizer()
+    optimizer.constant_length = 1.54
+    optimizer.linker_frag_length = 3.0
+    optimizer.fake_edge = False
+    optimizer.sorted_nodes = ["V0_[0 0 0]", "V1_[0 0 0]"]
+    optimizer.sorted_edges = [("V0_[0 0 0]", "V1_[0 0 0]")]
+    optimizer.V_data = _fragment_table([
+        _fragment_row("N", "N", [0.0, 0.0, 0.0]),
+    ])
+    optimizer.V_X_data = None
+    optimizer.E_data = _fragment_table([
+        _fragment_row("L", "L", [-1.0, 0.0, 0.0]),
+        _fragment_row("L", "L", [1.0, 0.0, 0.0]),
+    ])
+    optimizer.E_X_data = None
+    builder_defined_metadata = (
+        {"slot_type": "XB", "slot_ordinal": 0, "row_index": 0},
+        {"slot_type": "XA", "slot_ordinal": 0, "row_index": 1},
+    )
+    builder_defined_lookup = {
+        ("XB", 0): 0,
+        ("XA", 0): 1,
+    }
+    optimizer.node_role_registry = {
+        "node:typed": {
+            "role_id": "node:typed",
+            "node_data": optimizer.V_data,
+            "node_X_data": None,
+            "node_attachment_coords_by_type": {
+                "XA": np.array([[1.0, 0.0, 0.0]], dtype=float),
+                "XB": np.array([[2.0, 0.0, 0.0]], dtype=float),
+            },
+            "node_attachment_metadata": builder_defined_metadata,
+            "node_attachment_lookup": builder_defined_lookup,
+        },
+    }
+    optimizer.edge_role_registry = {
+        "edge:typed": {
+            "role_id": "edge:typed",
+            "linker_connectivity": 2,
+            "linker_center_data": optimizer.E_data,
+            "linker_center_X_data": None,
+            "linker_center_attachment_coords_by_type": {
+                "XA": np.array([[-1.0, 0.0, 0.0]], dtype=float),
+                "XB": np.array([[1.0, 0.0, 0.0]], dtype=float),
+            },
+            "linker_center_attachment_metadata": builder_defined_metadata,
+            "linker_center_attachment_lookup": builder_defined_lookup,
+            "linker_frag_length": 3.0,
+            "linker_fake_edge": False,
+        },
+    }
+
+    g = nx.Graph()
+    g.add_node("V0_[0 0 0]",
+               ccoords=np.array([0.0, 0.0, 0.0]),
+               node_role_id="node:typed")
+    g.add_node("V1_[0 0 0]",
+               ccoords=np.array([4.0, 0.0, 0.0]),
+               node_role_id="node:typed")
+    g.add_edge("V0_[0 0 0]", "V1_[0 0 0]", edge_role_id="edge:typed")
+
+    optimizer._prepare_role_fragment_payloads(g)
+
+    np.testing.assert_allclose(
+        optimizer.node_fragment_payloads["V0_[0 0 0]"]["x_coords"],
+        np.array([[2.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+    )
+    assert (
+        optimizer.node_fragment_payloads["V0_[0 0 0]"]["attachment_metadata"]
+        == builder_defined_metadata
+    )
+    assert (
+        optimizer.node_fragment_payloads["V0_[0 0 0]"]["attachment_lookup"]
+        == builder_defined_lookup
+    )
+    np.testing.assert_allclose(
+        optimizer.edge_fragment_payloads[("V0_[0 0 0]", "V1_[0 0 0]")]["x_coords"],
+        np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]]),
+    )
+
+
+def test_fragment_payload_from_arrays_derives_legacy_x_attachment_metadata():
+    optimizer = opt.NetOptimizer()
+
+    payload = optimizer._fragment_payload_from_arrays(
+        _fragment_table([
+            _fragment_row("N", "N", [0.0, 0.0, 0.0]),
+        ]),
+        _fragment_table([
+            _fragment_row("X1", "X", [1.0, 0.0, 0.0]),
+            _fragment_row("X2", "X", [0.0, 2.0, 0.0]),
+        ]),
+    )
+
+    np.testing.assert_allclose(
+        payload["x_coords"],
+        np.array([[1.0, 0.0, 0.0], [0.0, 2.0, 0.0]]),
+    )
+    assert payload["attachment_metadata"] == (
+        {"slot_type": "X", "slot_ordinal": 0, "row_index": 0},
+        {"slot_type": "X", "slot_ordinal": 1, "row_index": 1},
+    )
+    assert payload["attachment_lookup"] == {
+        ("X", 0): 0,
+        ("X", 1): 1,
+    }
+
+
+def test_generate_attachment_position_dict_preserves_row_alignment_through_rotation():
+    optimizer = opt.NetOptimizer()
+    optimizer.sorted_nodes = ["V0"]
+    optimizer.node_fragment_payloads = {
+        "V0": optimizer._fragment_payload_from_arrays(
+            _fragment_table([
+                _fragment_row("N", "N", [0.0, 0.0, 0.0]),
+            ]),
+            None,
+            attachment_coords_by_type={
+                "XA": np.array([[0.0, 2.0, 0.0]], dtype=float),
+                "XB": np.array([[1.0, 0.0, 0.0]], dtype=float),
+            },
+            attachment_metadata=(
+                {"slot_type": "XB", "slot_ordinal": 0, "row_index": 0},
+                {"slot_type": "XA", "slot_ordinal": 0, "row_index": 1},
+            ),
+            attachment_lookup={
+                ("XB", 0): 0,
+                ("XA", 0): 1,
+            },
+        ),
+    }
+
+    g = nx.Graph()
+    g.add_node("V0", ccoords=np.array([1.0, 1.0, 0.0]))
+
+    position_dict, metadata_by_node = optimizer._generate_attachment_position_dict(g)
+    np.testing.assert_allclose(
+        position_dict[0][:, 1:],
+        np.array([[2.0, 1.0, 0.0], [1.0, 3.0, 0.0]]),
+    )
+
+    rotated_positions = optimizer._apply_rotations_to_position_dict(
+        np.array([[[0.0, -1.0, 0.0],
+                   [1.0, 0.0, 0.0],
+                   [0.0, 0.0, 1.0]]]),
+        g,
+        position_dict,
+    )
+    lookup = optimizer._build_attachment_lookup_from_positions(
+        metadata_by_node,
+        rotated_positions,
+    )
+
+    np.testing.assert_allclose(lookup["V0"][("XB", 0)], [1.0, 2.0, 0.0])
+    np.testing.assert_allclose(lookup["V0"][("XA", 0)], [-1.0, 1.0, 0.0])
+
+
 def test_role_aware_optimizer_uses_role_registries_for_grouping_and_edge_payloads(
     monkeypatch,
 ):
