@@ -533,12 +533,27 @@ class MetalOrganicFrameworkBuilder:
             )
         return coords_by_type
 
-    def _compile_attachment_metadata(self, attachment_data_by_type):
-        metadata = []
-        lookup = {}
-        row_index = 0
-        for slot_type in sorted(attachment_data_by_type or {}):
-            rows = attachment_data_by_type.get(slot_type)
+    def _get_attachment_source_types(self):
+        source_types = {"X"}
+        canonical_metadata = getattr(
+            self.mof_top_library,
+            "canonical_role_metadata",
+            None,
+        ) or {}
+        for slot_rules in (canonical_metadata.get("slot_rules") or {}).values():
+            for slot_rule in slot_rules or ():
+                slot_type = slot_rule.get("slot_type")
+                if slot_type is None:
+                    continue
+                normalized_slot_type = str(slot_type).strip()
+                if normalized_slot_type:
+                    source_types.add(normalized_slot_type)
+        return source_types
+
+    def _iter_attachment_rows_in_source_order(self, attachment_data_by_type):
+        ordered_rows = []
+        fallback_order = 0
+        for slot_type, rows in (attachment_data_by_type or {}).items():
             if rows is None:
                 continue
             rows_array = np.asarray(rows, dtype=object)
@@ -547,15 +562,54 @@ class MetalOrganicFrameworkBuilder:
             if rows_array.ndim == 1:
                 rows_array = rows_array.reshape(1, -1)
             for slot_ordinal in range(rows_array.shape[0]):
-                entry = {
-                    "slot_type": str(slot_type),
-                    "slot_ordinal": int(slot_ordinal),
-                    "row_index": int(row_index),
-                }
-                metadata.append(entry)
-                lookup[(entry["slot_type"], entry["slot_ordinal"])] = entry["row_index"]
-                row_index += 1
+                row = rows_array[slot_ordinal]
+                try:
+                    source_order = int(row[2])
+                except (TypeError, ValueError):
+                    source_order = fallback_order
+                ordered_rows.append(
+                    (
+                        source_order,
+                        fallback_order,
+                        str(slot_type),
+                        int(slot_ordinal),
+                    )
+                )
+                fallback_order += 1
+        ordered_rows.sort(key=lambda item: (item[0], item[1]))
+        return ordered_rows
+
+    def _compile_attachment_metadata(self, attachment_data_by_type):
+        metadata = []
+        lookup = {}
+        for row_index, (_, _, slot_type, slot_ordinal) in enumerate(
+            self._iter_attachment_rows_in_source_order(attachment_data_by_type)
+        ):
+            entry = {
+                "slot_type": str(slot_type),
+                "slot_ordinal": int(slot_ordinal),
+                "row_index": int(row_index),
+            }
+            metadata.append(entry)
+            lookup[(entry["slot_type"], entry["slot_ordinal"])] = entry["row_index"]
         return tuple(metadata), lookup
+
+    def _validate_attachment_payload_alignment(self,
+                                               attachment_data_by_type,
+                                               attachment_coords_by_type,
+                                               attachment_metadata):
+        expected_rows = len(
+            self._iter_attachment_rows_in_source_order(attachment_data_by_type)
+        )
+        actual_rows = sum(
+            np.asarray(coords, dtype=float).reshape(-1, 3).shape[0]
+            for coords in (attachment_coords_by_type or {}).values()
+            if coords is not None
+        )
+        assert_msg_critical(
+            expected_rows == actual_rows == len(attachment_metadata),
+            "Builder attachment metadata must preserve full source-row alignment with flattened attachment coordinates.",
+        )
 
     def _recenter_attachment_data_by_type(
         self,
@@ -2428,6 +2482,9 @@ class MetalOrganicFrameworkBuilder:
 
     def _read_linker(self):
         self.frame_linker.linker_connectivity = self.linker_connectivity
+        self.frame_linker.pdbreader.attachment_source_types = (
+            self._get_attachment_source_types()
+        )
         if self.save_files:  #TODO: check if the target directory is set
             if self.linker_xyzfile is not None:
                 self.frame_linker.filename = self.linker_xyzfile
@@ -2477,6 +2534,11 @@ class MetalOrganicFrameworkBuilder:
         ) = self._compile_attachment_metadata(
             self.linker_center_attachment_data_by_type
         )
+        self._validate_attachment_payload_alignment(
+            self.linker_center_attachment_data_by_type,
+            self.linker_center_attachment_coords_by_type,
+            self.linker_center_attachment_metadata,
+        )
 
         if self.frame_linker.linker_connectivity > 2:
             #RECENTER COM of outer data
@@ -2524,6 +2586,11 @@ class MetalOrganicFrameworkBuilder:
             ) = self._compile_attachment_metadata(
                 self.linker_outer_attachment_data_by_type
             )
+            self._validate_attachment_payload_alignment(
+                self.linker_outer_attachment_data_by_type,
+                self.linker_outer_attachment_coords_by_type,
+                self.linker_outer_attachment_metadata,
+            )
 
             self.linker_frag_length = np.linalg.norm(
                 self.linker_outer_X_data[0, 5:8].astype(float) -
@@ -2557,6 +2624,9 @@ class MetalOrganicFrameworkBuilder:
                                                    self.ostream)[0]
         self.frame_nodes.filename = Path(nodes_database_path,
                                          selected_node_pdb_filename)
+        self.frame_nodes.pdbreader.attachment_source_types = (
+            self._get_attachment_source_types()
+        )
         self.frame_nodes.node_metal_type = self.node_metal
         self.frame_nodes.dummy_node = self.dummy_atom_node
         self.frame_nodes.create()
@@ -2574,6 +2644,11 @@ class MetalOrganicFrameworkBuilder:
             self.node_attachment_metadata,
             self.node_attachment_lookup,
         ) = self._compile_attachment_metadata(self.node_attachment_data_by_type)
+        self._validate_attachment_payload_alignment(
+            self.node_attachment_data_by_type,
+            self.node_attachment_coords_by_type,
+            self.node_attachment_metadata,
+        )
         self.dummy_atom_node_dict = self.frame_nodes.dummy_node_split_dict
         self._update_node_role_registry_data()
 

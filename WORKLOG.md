@@ -187,3 +187,42 @@ notes:
 Updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) to mark Phase 3 complete and appended the executor completion entry to [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md). I did not edit implementation files in this pass because the active Phase 3 optimizer/contract work is already present in the current checkout and stays within the plan-approved module boundaries.
 
 Validation was limited to static checks: `python -m py_compile src/mofbuilder/core/optimizer.py src/mofbuilder/core/optimizer_contract.py tests/test_core_optimizer.py` passed. Runtime confirmation is still blocked here because `pytest` is not installed and import-level exercises fail due missing dependencies such as `networkx`.
+
+
+date:
+2026-03-16 18:05 CET
+role:
+Executor
+title:
+Mixed attachment slot preservation hotfix
+
+branch:
+typed-attachment-slots
+phase:
+Phase 3
+checkpoint:
+mixed attachment order and count preservation applied
+
+summary:
+Implemented a follow-up hotfix across PDB ingestion, builder metadata compilation, and optimizer payload validation so mixed typed attachment slots can survive in original fragment row order instead of collapsing to legacy `X`-only anchors. The builder now configures attachment-source types from canonical slot metadata, compiles attachment row indices from source fragment order, validates metadata/count alignment after node and linker reads, and the optimizer now refuses to synthesize mixed typed metadata locally while checking node anchor counts before rotation seeding.
+
+files touched:
+src/mofbuilder/io/pdb_reader.py
+src/mofbuilder/core/builder.py
+src/mofbuilder/core/optimizer.py
+STATUS.md
+WORKLOG.md
+
+invariants checked:
+- topology remains the source of truth
+- builder remains the owner of attachment semantics and canonical slot order
+- optimizer remains geometry-focused and no longer invents mixed typed slot order
+- legacy flat-anchor compatibility remains available for `X`-only payloads
+
+validation:
+- tests intentionally not run per request
+- static compile checks intentionally skipped per request
+
+notes:
+- `PdbReader` attachment grouping is now configurable so builder can preserve non-`X` slot sources without globally treating all atoms as attachment anchors.
+- Optimizer now fails early on mixed typed payloads that arrive without builder-defined metadata instead of reaching Hungarian with mismatched vector counts.

@@ -72,6 +72,7 @@ class PdbReader:
 
         self.X_data: Optional[np.ndarray] = None
         self.attachment_data_by_type: dict[str, np.ndarray] = {}
+        self.attachment_source_types: Optional[set[str]] = None
         self.node_atoms: Optional[np.ndarray] = None
         self.node_ccoords: Optional[np.ndarray] = None
         self.node_x_ccoords: Optional[np.ndarray] = None
@@ -177,23 +178,38 @@ class PdbReader:
                     f"Center of mass type {com_type} at {com}")
             self.data[:, 5:8] = self.data[:, 5:8].astype(float) - com
 
-        self.attachment_data_by_type = self._group_attachment_data(self.data)
+        self.attachment_data_by_type = self._group_attachment_data(
+            self.data,
+            attachment_source_types=self.attachment_source_types,
+        )
         self.X_data = self.attachment_data_by_type.get("X")
 
     @staticmethod
     def _group_attachment_data(
         data: Optional[np.ndarray],
+        attachment_source_types: Optional[set[str]] = None,
     ) -> dict[str, np.ndarray]:
         """Group attachment rows by preserved source atom type."""
         if data is None or len(data) == 0:
             return {}
+
+        normalized_source_types = None
+        if attachment_source_types:
+            normalized_source_types = {
+                str(source_type).strip()
+                for source_type in attachment_source_types
+                if str(source_type).strip()
+            }
 
         attachment_rows: dict[str, list[np.ndarray]] = {}
         for row in data:
             source_atom_type = str(row[-1]).strip()
             if not source_atom_type:
                 continue
-            if not source_atom_type.startswith("X"):
+            if normalized_source_types is not None:
+                if source_atom_type not in normalized_source_types:
+                    continue
+            elif not source_atom_type.startswith("X"):
                 continue
             attachment_rows.setdefault(source_atom_type, []).append(row)
 
@@ -240,7 +256,10 @@ class PdbReader:
                 residue_number, value_x, value_y, value_z, spin, charge, note
             ])
         data = np.vstack(data)
-        attachment_data_by_type = self._group_attachment_data(data)
+        attachment_data_by_type = self._group_attachment_data(
+            data,
+            attachment_source_types=self.attachment_source_types,
+        )
         X_data = attachment_data_by_type.get("X")
         return data, X_data, attachment_data_by_type
 

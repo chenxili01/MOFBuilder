@@ -1,7 +1,7 @@
 # STATUS.md
 
 - Phase: Phase 3
-- Checkpoint: workflow-complete
+- Checkpoint: mixed-attachment-hotfix-applied
 - Status: COMPLETED
 - Next step: done
 - Last update: 2026-03-16
@@ -14,11 +14,10 @@ Objective:
 Preserve heterogeneous attachment slot identity.
 
 Current focus:
-Phase 3 complete. Slot-aware placement now compiles node-local contracts and
-deterministic correspondences from builder and graph semantic records, feeds
-guarded rigid/refined local placement for supported role-aware cases, records
-fallback/debug decisions explicitly, and preserves the legacy flat-anchor
-optimizer interface for compatibility paths.
+Phase 3 remains complete. A follow-up hotfix now preserves mixed typed
+attachment slots in source fragment order through builder and optimizer payload
+preparation so `node_X_pos_dict` keeps the full attachment-slot count for
+heterogeneous nodes while legacy `X`-only compatibility remains available.
 
 Invariants:
 - topology source of truth

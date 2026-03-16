@@ -1199,6 +1199,17 @@ class NetOptimizer:
                                           dtype=float).reshape(-1, 3)
         return normalized
 
+    def _is_legacy_x_only_attachment_coords(self, attachment_coords_by_type):
+        nonempty_types = []
+        for atom_type, coords in (attachment_coords_by_type or {}).items():
+            if coords is None:
+                continue
+            array = np.asarray(coords, dtype=float).reshape(-1, 3)
+            if array.size == 0:
+                continue
+            nonempty_types.append(str(atom_type))
+        return bool(nonempty_types) and set(nonempty_types) <= {"X"}
+
     def _resolve_attachment_coords_by_type(self,
                                            *,
                                            attachment_coords_by_type=None,
@@ -1278,12 +1289,16 @@ class NetOptimizer:
         }
 
     def _compile_attachment_metadata_from_coords(self, attachment_coords_by_type):
+        assert_msg_critical(
+            self._is_legacy_x_only_attachment_coords(attachment_coords_by_type),
+            "Optimizer requires builder-defined attachment metadata for mixed typed attachment coordinates; only legacy X-only payloads may derive metadata locally.",
+        )
         metadata = []
         lookup = {}
         row_index = 0
-        for slot_type in sorted(attachment_coords_by_type or {}):
+        for slot_type in ("X",):
             coords = np.asarray(
-                attachment_coords_by_type[slot_type],
+                (attachment_coords_by_type or {}).get(slot_type, ()),
                 dtype=float,
             ).reshape(-1, 3)
             if coords.size == 0:
@@ -1329,6 +1344,15 @@ class NetOptimizer:
         self._validate_attachment_metadata_row_indices(
             normalized_attachment_metadata
         )
+        if not self._is_legacy_x_only_attachment_coords(attachment_coords_by_type):
+            assert_msg_critical(
+                len(normalized_attachment_metadata) == sum(
+                    np.asarray(coords, dtype=float).reshape(-1, 3).shape[0]
+                    for coords in (attachment_coords_by_type or {}).values()
+                    if coords is not None
+                ),
+                "Optimizer typed attachment metadata must preserve the full flattened attachment-slot count.",
+            )
         return (
             normalized_attachment_metadata,
             self._compile_attachment_lookup_from_metadata(
@@ -1676,6 +1700,12 @@ class NetOptimizer:
             pname_set_dict[group_name]["ind_ofsortednodes"].append(i)
             if len(pname_set_dict[group_name]
                    ["ind_ofsortednodes"]) == 1:  # first node
+                anchor_rows = node_X_pos_dict[i].shape[0]
+                node_degree = len(list(G.neighbors(node)))
+                assert_msg_critical(
+                    anchor_rows == node_degree,
+                    f"Optimizer node anchor count must match graph degree before rotation seeding for {node}: got {anchor_rows} anchors and {node_degree} neighbors.",
+                )
                 pname_set_dict[group_name]["rot_trans"] = get_rot_trans_matrix(
                         node, G, sorted_nodes,
                         node_X_pos_dict)  # initial guess
@@ -2204,7 +2234,7 @@ def get_rot_trans_matrix(node, G, sorted_nodes, Xatoms_positions_dict):
 
     
     
-    return rot
+    return rot, trans
 
 
 def expand_set_rots(pname_set_dict, set_rotations, sorted_nodes):
