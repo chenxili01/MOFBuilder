@@ -98,13 +98,28 @@ Execution notes:
 ### Phase 3 — Slot-Aware Placement
 
 Goal:
-Resolve attachment slots using metadata.
+Resolve attachment slots during role-aware local placement using builder-defined
+semantic records while preserving the legacy flat-anchor optimizer pipeline.
 
 Scope:
-- placement lookup logic
+- compile node-local placement contracts from semantic snapshot records
+- derive deterministic edge-to-slot correspondences for heterogeneous nodes
+- feed selected correspondences into guarded local rigid initialization and
+  constrained refinement for supported placement paths
+- preserve explicit fallback behavior when slot-aware placement is unavailable
 
 Not doing:
+- builder metadata schema changes
+- optimizer flat-anchor preparation changes
 - topology redesign
+- framework assembly redesign
+
+Execution notes:
+- placement must consume builder-owned `slot_rules`, `node_attachment_lookup`,
+  and graph `slot_index` metadata without reassigning semantic ownership
+- graph `slot_index` remains the attachment-incidence authority
+- `node_X_pos_dict` and the legacy non-role-aware optimizer path must remain
+  available
 
 ---
 

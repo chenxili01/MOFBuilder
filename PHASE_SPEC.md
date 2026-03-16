@@ -105,19 +105,79 @@ input source.
 
 ### Allowed Modules
 
-- placement logic
+- `src/mofbuilder/core/optimizer_contract.py`
+- `src/mofbuilder/core/optimizer.py`
+- `tests/test_core_optimizer.py`
+
+### Phase Goal
+
+Resolve node-edge placement correspondences by slot identity using the semantic
+snapshot produced upstream, while keeping the optimizer's flat-anchor geometry
+contract unchanged.
+
+### Inputs Assumed Complete
+
+- builder snapshot records already carry resolved `slot_rules`
+- graph edge records already carry stable `slot_index` maps
+- optimizer payload preparation already preserves flattened attachment row order
+  and rotated attachment lookup alignment
+- legacy flat-anchor interfaces remain available through `node_X_pos_dict`
 
 ### Required Work
 
-- resolve anchors using slot metadata
-- map placement edges to slot identity
+- compile node placement contracts directly from semantic snapshot node and edge
+  records without redefining builder semantics inside optimizer
+- match incident edges to node slots using builder-defined slot identity and
+  graph-owned `slot_index` data, while respecting endpoint side, resolve mode,
+  null-edge policy, and bundle ordering hints
+- enumerate legal node correspondences deterministically and preserve stable
+  ambiguity tie-breaking for multi-slot heterogeneous nodes
+- build local rigid initialization and constrained refinement from the selected
+  slot mapping using explicit source/target anchor or direction metadata
+- keep guarded role-aware local placement opt-in and preserve clean fallback
+  behavior for unsupported roles, missing semantic snapshots, legacy literal
+  `X` compatibility, and other non-slot-aware cases
+- expose debug records that explain whether slot-aware placement selected a
+  semantic pose or fell back to legacy behavior
+
+### Expected Touchpoints
+
+- `compile_node_placement_contract()`
+- `compile_legal_node_correspondences()`
+- `compile_local_rigid_initialization()`
+- `compile_discrete_ambiguity_resolution()`
+- `compile_local_constrained_refinement()`
+- `_compile_role_aware_initial_rotations()`
+- `_select_guarded_role_aware_local_placement()`
+- `_build_guarded_debug_record()`
 
 ### Forbidden Changes
 
-- altering builder semantics
-- modifying optimizer geometry pipeline
+- builder metadata schema changes
+- optimizer fragment flattening or `node_X_pos_dict` contract changes
+- topology ordering or graph slot-index generation changes
+- framework assembly or write-path changes
+- moving semantic ownership from builder into optimizer
+- moving topology ownership away from graph
 
 ### Completion Criteria
 
-- heterogeneous anchor nodes place correctly
-- slot identity preserved during placement
+- role-aware placement selects slot-consistent correspondences for supported
+  heterogeneous nodes using builder-provided semantics
+- ambiguous slot mappings resolve deterministically without count or shape
+  mismatches in the guarded placement path
+- guarded fallback preserves legacy behavior when slot-aware placement is
+  disabled, unsupported, or semantically incomplete
+- Phase 2 flat-anchor compatibility and row-order guarantees remain unchanged
+
+### Validation Requirements
+
+- targeted tests cover contract compilation from `slot_rules`, `slot_index`,
+  and edge metadata target-anchor payloads
+- targeted tests cover legal correspondence enumeration for heterogeneous slot
+  types, endpoint-side constraints, and bundle-ordered cases
+- targeted tests cover rigid initialization and constrained refinement using the
+  selected slot mapping
+- targeted tests cover guarded fallback reasons for disabled placement, missing
+  semantic snapshot, unsupported role classes, and legacy literal `X`
+  compatibility
