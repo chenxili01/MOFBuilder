@@ -2304,6 +2304,9 @@ class MetalOrganicFrameworkBuilder:
             self.frame_net.cif_file is not None,
             "Template cif file is not set in mof_top_library.")
         self.frame_net.edge_length_range = self.linker_frag_length_search_range
+        self.frame_net.canonical_role_metadata = (
+            self.mof_top_library.canonical_role_metadata
+        )
         self.frame_net.create_net()
         self._normalize_graph_role_ids()
         validation_result = self.frame_net.validate_roles(

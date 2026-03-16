@@ -271,7 +271,9 @@ class NetOptimizer:
             for index, group_name in enumerate(pname_set_dict):
                 rotation_matrix = role_aware_initial_rotations.get(group_name)
                 if rotation_matrix is not None:
-                    ini_rot[index] = rotation_matrix
+                    ini_rot[index] = self._convert_role_aware_rotation_to_optimizer_frame(
+                        rotation_matrix
+                    )
 
         if not self.skip_rotation_optimization:
             ####TODO: modified for mil53
@@ -537,6 +539,10 @@ class NetOptimizer:
         self.role_aware_local_placement_debug_records = debug_records
         return initial_rotations
 
+    def _convert_role_aware_rotation_to_optimizer_frame(self, rotation_matrix):
+        """Convert contract-space row-vector rotations to the optimizer's stored frame."""
+        return np.asarray(rotation_matrix, dtype=float).T
+
     def _build_guarded_fallback_debug_records(self,
                                               pname_set_dict,
                                               *,
@@ -651,6 +657,27 @@ class NetOptimizer:
         return self.semantic_snapshot.graph_edge_records.get(
             "|".join(str(node_name) for node_name in reversed(edge))
         )
+
+    def _is_semantic_null_edge(self, edge, *, edge_role_id=None, edge_record=None):
+        if self.semantic_snapshot is None:
+            return False
+        record = edge_record if edge_record is not None else self._get_semantic_edge_record(edge)
+        if record is not None:
+            if bool(record.is_null_edge):
+                return True
+            if record.edge_role_id is not None:
+                edge_role_id = record.edge_role_id
+        if edge_role_id is None:
+            return False
+        policy_record = self.semantic_snapshot.null_edge_policy_records.get(edge_role_id)
+        if policy_record is not None and bool(policy_record.is_null_edge):
+            return True
+        edge_role_record = self.semantic_snapshot.edge_role_records.get(edge_role_id)
+        if edge_role_record is None:
+            return False
+        if edge_role_record.null_edge_policy is not None:
+            return bool(edge_role_record.null_edge_policy.is_null_edge)
+        return edge_role_record.edge_kind == "null"
 
     def _get_slot_rule_by_attachment_index(self, slot_rules, attachment_index):
         if attachment_index is None:
@@ -1093,6 +1120,25 @@ class NetOptimizer:
             return next(iter(registry.values()))
         return None
 
+    def _is_linker_center_node(self, G, node):
+        node_data = G.nodes[node]
+        node_role_id = node_data.get("node_role_id")
+        if isinstance(node_role_id, str):
+            if node_role_id.startswith("node:C"):
+                return True
+            if ":" not in node_role_id and node_role_id.startswith("C"):
+                return True
+
+        if node_data.get("note") == "CV":
+            return True
+
+        if self.semantic_snapshot is not None:
+            node_record = self.semantic_snapshot.graph_node_records.get(str(node))
+            if node_record is not None and node_record.role_class == "C":
+                return True
+
+        return str(node).startswith("C")
+
     def _get_node_registry_entry(self, G, node):
         registry = self.node_role_registry or {}
         if not registry:
@@ -1112,7 +1158,7 @@ class NetOptimizer:
         return self._get_single_registry_entry(registry)
 
     def _get_center_registry_entry_for_node(self, G, node):
-        if not (self.edge_role_registry and "CV" in node):
+        if not (self.edge_role_registry and self._is_linker_center_node(G, node)):
             return None
         for neighbor in G.neighbors(node):
             role_entry = self._get_edge_registry_entry(G, (node, neighbor))
@@ -1122,7 +1168,7 @@ class NetOptimizer:
         return None
 
     def _resolve_node_fragment_payload(self, G, node):
-        if "CV" in node:
+        if self._is_linker_center_node(G, node):
             role_entry = self._get_center_registry_entry_for_node(G, node)
             if role_entry is not None and role_entry.get("linker_center_data") is not None:
                 return self._fragment_payload_from_arrays(
@@ -1164,6 +1210,7 @@ class NetOptimizer:
 
     def _resolve_edge_fragment_payload(self, G, edge):
         role_entry = self._get_edge_registry_entry(G, edge)
+        edge_role_id = G.edges[edge].get("edge_role_id")
         if role_entry is not None:
             if int(role_entry["linker_connectivity"]) > 2:
                 data = role_entry.get("linker_outer_data")
@@ -1185,7 +1232,7 @@ class NetOptimizer:
                 linker_frag_length = role_entry.get("linker_frag_length")
                 if linker_frag_length is None:
                     linker_frag_length = self.linker_frag_length
-                return self._fragment_payload_from_arrays(
+                payload = self._fragment_payload_from_arrays(
                     data,
                     x_data,
                     attachment_data_by_type=attachment_data_by_type,
@@ -1193,8 +1240,12 @@ class NetOptimizer:
                     linker_frag_length=linker_frag_length,
                     fake_edge=bool(role_entry.get("linker_fake_edge", False)),
                 )
+                if self._is_semantic_null_edge(edge, edge_role_id=edge_role_id):
+                    payload["fake_edge"] = True
+                    payload["linker_frag_length"] = 0.0
+                return payload
 
-        return self._fragment_payload_from_arrays(
+        payload = self._fragment_payload_from_arrays(
             self.E_data,
             self.E_X_data,
             attachment_data_by_type=self.E_attachment_data_by_type,
@@ -1202,6 +1253,10 @@ class NetOptimizer:
             linker_frag_length=self.linker_frag_length,
             fake_edge=self.fake_edge,
         )
+        if self._is_semantic_null_edge(edge, edge_role_id=edge_role_id):
+            payload["fake_edge"] = True
+            payload["linker_frag_length"] = 0.0
+        return payload
 
     def _prepare_role_fragment_payloads(self, G):
         self.node_fragment_payloads = {}
@@ -1516,7 +1571,7 @@ class OptimizationDriver:
         self.display = True
         self.eps = 1e-8
 
-        self.fixed_cell_shape = True
+        self.fixed_cell_shape = False
 
         self._debug = False
 
@@ -1565,8 +1620,12 @@ class OptimizationDriver:
                 total_distance += 1e4  # penalty for the distance difference
             total_distance += np.min(dist_matrix)**2
 
-            total_distance += 1e3 / (np.max(dist_matrix) - np.min(dist_matrix)
-                                     )  # reward for the distance difference
+            spread = np.max(dist_matrix) - np.min(dist_matrix)
+            # Symmetric edges can produce identical distances for all candidate
+            # X atoms, which carries no ordering signal and would otherwise
+            # inject an infinite objective into L-BFGS-B.
+            if np.isfinite(spread) and spread > 1e-8:
+                total_distance += 1e3 / spread
 
         return total_distance
 

@@ -96,6 +96,7 @@ class FrameNet:
         self.eenode333_role_ids = None
         self.ecnode_role_ids = None
         self.ecnode333_role_ids = None
+        self.canonical_role_metadata = None
 
         #debug
         self._debug = False
@@ -297,6 +298,26 @@ class FrameNet:
         if ":" not in role_id:
             return None
         return role_id.split(":", 1)[1] or None
+
+    def _get_edge_path_rule_map(self):
+        normalized_metadata = self._normalize_validation_metadata(
+            self.canonical_role_metadata
+        )
+        return dict(normalized_metadata.get("path_rules", {}))
+
+    def _get_declared_edge_endpoint_mode(self, edge_role_id):
+        edge_alias = self._role_alias_from_id(edge_role_id)
+        if edge_alias is None:
+            return None
+        endpoint_pattern = self._get_edge_path_rule_map().get(edge_alias)
+        if endpoint_pattern is None:
+            return None
+        left_role, _, right_role = endpoint_pattern
+        if left_role.startswith("V") and right_role.startswith("V"):
+            return "V-V"
+        if left_role.startswith("V") and right_role.startswith("C"):
+            return "V-C"
+        return None
 
     def _normalize_validation_metadata(self, role_metadata):
         """Normalize passive role metadata into a small validation view."""
@@ -727,6 +748,170 @@ class FrameNet:
         self.G = G
         self.pair_vertex_edge = pair_vertex_edge
 
+    def _build_vv_edge_candidate(self, e, e_idx, *, distance_range=None):
+        vvnode333 = np.asarray(self.vvnode333)
+        if vvnode333.shape[0] < 2:
+            return None
+
+        dist = np.linalg.norm(np.dot(self.unit_cell, (vvnode333 - e).T).T, axis=1)
+        if distance_range:
+            candidates = np.where(
+                (dist > distance_range[0]) & (dist < distance_range[1])
+            )[0]
+            if len(candidates) != 2:
+                return None
+            v1_idx, v2_idx = candidates
+        else:
+            v1_idx, v2_idx = np.argsort(dist)[:2]
+
+        v1 = vvnode333[v1_idx]
+        v2 = vvnode333[v2_idx]
+        center_error = float(np.linalg.norm(((v1 + v2) / 2.0) - e))
+        if not (
+            self._check_inside_unit_cell(v1) or self._check_inside_unit_cell(v2)
+        ):
+            return None
+
+        return {
+            "mode": "V-V",
+            "center_error": center_error,
+            "nodes": (
+                (
+                    f"V{v1_idx}",
+                    {
+                        "fcoords": v1,
+                        "note": "V",
+                        "type": "V",
+                        "node_role_id": self.vvnode333_role_ids[v1_idx],
+                    },
+                ),
+                (
+                    f"V{v2_idx}",
+                    {
+                        "fcoords": v2,
+                        "note": "V",
+                        "type": "V",
+                        "node_role_id": self.vvnode333_role_ids[v2_idx],
+                    },
+                ),
+            ),
+            "edge": (
+                f"V{v1_idx}",
+                f"V{v2_idx}",
+                {
+                    "fcoords": (v1, v2),
+                    "fc_center": e,
+                    "edge_role_id": self.eenode333_role_ids[e_idx],
+                },
+            ),
+        }
+
+    def _build_vc_edge_candidate(self, e, e_idx):
+        vvnode333 = np.asarray(self.vvnode333)
+        ecnode333 = np.asarray(self.ecnode333)
+        if vvnode333.shape[0] == 0 or ecnode333.shape[0] == 0:
+            return None
+
+        dist_v_e = np.linalg.norm(np.dot(self.unit_cell, (vvnode333 - e).T).T, axis=1)
+        v1_idx = int(np.argmin(dist_v_e))
+        v1 = vvnode333[v1_idx]
+
+        dist_c_e = np.linalg.norm(np.dot(self.unit_cell, (ecnode333 - e).T).T, axis=1)
+        v2_idx = int(np.argmin(dist_c_e))
+        v2 = ecnode333[v2_idx]
+
+        center_error = float(np.linalg.norm(((v1 + v2) / 2.0) - e))
+        if not (
+            self._check_inside_unit_cell(v1) or self._check_inside_unit_cell(v2)
+        ):
+            return None
+
+        return {
+            "mode": "V-C",
+            "center_error": center_error,
+            "nodes": (
+                (
+                    f"V{v1_idx}",
+                    {
+                        "fcoords": v1,
+                        "note": "V",
+                        "node_role_id": self.vvnode333_role_ids[v1_idx],
+                    },
+                ),
+                (
+                    f"CV{v2_idx}",
+                    {
+                        "fcoords": v2,
+                        "note": "CV",
+                        "node_role_id": self.ecnode333_role_ids[v2_idx],
+                    },
+                ),
+            ),
+            "edge": (
+                f"V{v1_idx}",
+                f"CV{v2_idx}",
+                {
+                    "fcoords": (v1, v2),
+                    "fc_center": e,
+                    "edge_role_id": self.eenode333_role_ids[e_idx],
+                },
+            ),
+        }
+
+    def _resolve_edge_candidate(self, e, e_idx):
+        declared_mode = self._get_declared_edge_endpoint_mode(
+            self.eenode333_role_ids[e_idx]
+        )
+        if declared_mode == "V-V":
+            candidate = self._build_vv_edge_candidate(
+                e,
+                e_idx,
+                distance_range=self.edge_length_range,
+            )
+            if candidate is None or candidate["center_error"] >= 1e-3:
+                return None
+            return candidate
+        if declared_mode == "V-C":
+            candidate = self._build_vc_edge_candidate(e, e_idx)
+            if candidate is None or candidate["center_error"] >= 0.1:
+                return None
+            return candidate
+
+        vc_candidate = self._build_vc_edge_candidate(e, e_idx)
+        vv_candidate = self._build_vv_edge_candidate(
+            e,
+            e_idx,
+            distance_range=self.edge_length_range,
+        )
+        valid_candidates = []
+        if vc_candidate is not None and vc_candidate["center_error"] < 0.1:
+            valid_candidates.append(vc_candidate)
+        if vv_candidate is not None and vv_candidate["center_error"] < 1e-3:
+            valid_candidates.append(vv_candidate)
+
+        if not valid_candidates:
+            return None
+        return min(valid_candidates, key=lambda item: item["center_error"])
+
+    def _find_pair_mixed_edge_types(self):
+        """Resolve each edge site independently so V-E-C and V-E-V can coexist."""
+        G = self.G
+        pair_vertex_edge = []
+        for e_idx, e in enumerate(self.eenode333):
+            candidate = self._resolve_edge_candidate(e, e_idx)
+            if candidate is None:
+                continue
+
+            for node_name, node_attrs in candidate["nodes"]:
+                G.add_node(node_name, **node_attrs)
+
+            left_node, right_node, edge_attrs = candidate["edge"]
+            G.add_edge(left_node, right_node, **edge_attrs)
+            pair_vertex_edge.append((left_node, right_node, e))
+
+        self.G = G
+        self.pair_vertex_edge = pair_vertex_edge
+
     def _add_ccoords(self, G, unit_cell):
         """
         Adds cartesian coordinates to each node in the graph.
@@ -976,7 +1161,10 @@ class FrameNet:
             self._sort_nodes_by_type_connectivity()
             self._find_and_sort_edges_bynodeconnectivity()
         else:  # multitopic linker MOF
-            self._find_pair_v_e_c()
+            if self._get_edge_path_rule_map() or uses_explicit_edge_types:
+                self._find_pair_mixed_edge_types()
+            else:
+                self._find_pair_v_e_c()
             self._add_ccoords(self.G, self.unit_cell)
             self._set_DV_V(self.G)
             self._set_DE_E()

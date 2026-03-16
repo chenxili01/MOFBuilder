@@ -294,6 +294,37 @@ def test_compile_role_aware_initial_rotations_supports_v_and_c_guarded_cases(
     assert optimizer.role_aware_local_placement_debug_records["C0"]["status"] == "selected"
 
 
+def test_convert_role_aware_rotation_to_optimizer_frame_preserves_point_orientation():
+    optimizer = opt.NetOptimizer()
+    optimizer.sorted_nodes = ["V0"]
+    rotation_contract = np.array(
+        [
+            [0.0, -1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    g = nx.Graph()
+    g.add_node("V0", ccoords=np.array([0.0, 0.0, 0.0]))
+    positions = {
+        0: np.array([[0, 1.0, 0.0, 0.0]], dtype=float),
+    }
+
+    optimizer_rotation = optimizer._convert_role_aware_rotation_to_optimizer_frame(
+        rotation_contract
+    )
+    rotated = optimizer._apply_rotations_to_position_dict(
+        np.asarray([optimizer_rotation]),
+        g,
+        positions,
+    )
+
+    assert np.allclose(
+        rotated[0][0, 1:],
+        np.dot(np.array([1.0, 0.0, 0.0]), rotation_contract),
+    )
+
+
 def test_compile_role_aware_initial_rotations_records_guard_disabled_and_missing_snapshot():
     optimizer = opt.NetOptimizer()
     optimizer.sorted_nodes = ["V0", "C0"]
@@ -1727,6 +1758,88 @@ def test_prepare_role_fragment_payloads_accepts_typed_attachment_coords_without_
     )
 
 
+def test_prepare_role_fragment_payloads_uses_semantic_null_edge_override_for_target_lengths():
+    optimizer = opt.NetOptimizer(
+        semantic_snapshot=OptimizationSemanticSnapshot(
+            family_name="ROLE-AWARE",
+            graph_phase="sG",
+            graph_edge_records={
+                "V0_[0 0 0]|V1_[0 0 0]": GraphEdgeSemanticRecord(
+                    edge_id="V0_[0 0 0]|V1_[0 0 0]",
+                    graph_edge=("V0_[0 0 0]", "V1_[0 0 0]"),
+                    edge_role_id="edge:EB",
+                    is_null_edge=True,
+                    null_payload_model="duplicated_zero_length_anchors",
+                ),
+            },
+            null_edge_policy_records={
+                "edge:EB": NullEdgePolicyRecord(
+                    edge_role_id="edge:EB",
+                    edge_kind="null",
+                    is_null_edge=True,
+                    null_payload_model="duplicated_zero_length_anchors",
+                ),
+            },
+        )
+    )
+    optimizer.constant_length = 1.54
+    optimizer.linker_frag_length = 3.0
+    optimizer.fake_edge = False
+    optimizer.sorted_nodes = ["V0_[0 0 0]", "V1_[0 0 0]"]
+    optimizer.sorted_edges = [("V0_[0 0 0]", "V1_[0 0 0]")]
+    optimizer.V_data = _fragment_table([
+        _fragment_row("Al1", "Al", [0.0, 0.0, 0.0]),
+    ])
+    optimizer.V_X_data = _fragment_table([
+        _fragment_row("XA1", "XA", [2.0, 0.0, 0.0]),
+    ])
+    optimizer.E_data = _fragment_table([
+        _fragment_row("L", "L", [-1.0, 0.0, 0.0]),
+        _fragment_row("L", "L", [1.0, 0.0, 0.0]),
+    ])
+    optimizer.E_X_data = _fragment_table([
+        _fragment_row("X1", "X", [-1.0, 0.0, 0.0]),
+        _fragment_row("X2", "X", [1.0, 0.0, 0.0]),
+    ])
+    optimizer.node_role_registry = {
+        "node:VA": {
+            "role_id": "node:VA",
+            "node_data": optimizer.V_data,
+            "node_X_data": optimizer.V_X_data,
+        },
+    }
+    optimizer.edge_role_registry = {
+        "edge:EB": {
+            "role_id": "edge:EB",
+            "linker_connectivity": 2,
+            "linker_center_data": optimizer.E_data,
+            "linker_center_X_data": optimizer.E_X_data,
+            "linker_frag_length": 3.0,
+            "linker_fake_edge": False,
+        },
+    }
+
+    g = nx.Graph()
+    g.add_node("V0_[0 0 0]",
+               ccoords=np.array([0.0, 0.0, 0.0]),
+               node_role_id="node:VA")
+    g.add_node("V1_[0 0 0]",
+               ccoords=np.array([4.0, 0.0, 0.0]),
+               node_role_id="node:VA")
+    g.add_edge("V0_[0 0 0]", "V1_[0 0 0]", edge_role_id="edge:EB")
+
+    optimizer._prepare_role_fragment_payloads(g)
+    edge_payload = optimizer.edge_fragment_payloads[("V0_[0 0 0]", "V1_[0 0 0]")]
+    target_edge_lengths = optimizer._get_target_edge_lengths()
+
+    assert edge_payload["fake_edge"] is True
+    assert edge_payload["linker_frag_length"] == 0.0
+    assert np.isclose(
+        target_edge_lengths[("V0_[0 0 0]", "V1_[0 0 0]")],
+        1.54 + 2.0 + 2.0,
+    )
+
+
 def test_prepare_role_fragment_payloads_derive_typed_attachment_coords_from_attachment_rows():
     optimizer = opt.NetOptimizer()
     optimizer.constant_length = 1.54
@@ -1904,6 +2017,59 @@ def test_role_aware_optimizer_uses_role_registries_for_grouping_and_edge_payload
     assert placed.edges[("V0_[0 0 0]", "V0_[1 0 0]")]["c_points"][0, 0] == "ROLE"
     assert placed.nodes["V0_[0 0 0]"]["c_points"][0, 0] == "A"
     assert placed.nodes["V0_[1 0 0]"]["c_points"][0, 0] == "B"
+
+
+def test_prepare_role_fragment_payloads_treats_c0_nodes_as_linker_centers():
+    optimizer = opt.NetOptimizer()
+    optimizer.sorted_nodes = ["C0"]
+    optimizer.sorted_edges = []
+    optimizer.V_data = _fragment_table([
+        _fragment_row("GLOBAL", "GLOBAL", [9.0, 0.0, 0.0]),
+    ])
+    optimizer.V_X_data = _fragment_table([
+        _fragment_row("X", "X", [9.0, 0.0, 0.0]),
+    ])
+    optimizer.EC_data = _fragment_table([
+        _fragment_row("CENTER", "CENTER", [0.0, 2.0, 0.0]),
+    ])
+    optimizer.EC_X_data = _fragment_table([
+        _fragment_row("XA", "XA", [1.0, 0.0, 0.0]),
+    ])
+    optimizer.edge_role_registry = {
+        "edge:EA": {
+            "role_id": "edge:EA",
+            "linker_connectivity": 3,
+            "linker_center_data": _fragment_table([
+                _fragment_row("ROLE-CENTER", "ROLE-CENTER", [0.0, 3.0, 0.0]),
+            ]),
+            "linker_center_X_data": _fragment_table([
+                _fragment_row("XA", "XA", [0.0, 1.0, 0.0]),
+            ]),
+        },
+    }
+
+    g = nx.Graph()
+    g.add_node("C0",
+               ccoords=np.array([1.0, 1.0, 1.0]),
+               note="CV",
+               node_role_id="node:CA")
+    g.add_node("V0", ccoords=np.array([4.0, 0.0, 0.0]), node_role_id="node:VA")
+    g.add_edge("C0", "V0", edge_role_id="edge:EA")
+
+    optimizer._prepare_role_fragment_payloads(g)
+
+    assert np.allclose(
+        optimizer.node_fragment_payloads["C0"]["coords"],
+        np.array([[0.0, 3.0, 0.0]]),
+    )
+    assert np.allclose(
+        optimizer.node_fragment_payloads["C0"]["x_coords"],
+        np.array([[0.0, 1.0, 0.0]]),
+    )
+    assert np.array_equal(
+        optimizer.nodes_atom["C0"],
+        _fragment_table([["ROLE-CENTER", "ROLE-CENTER"]]),
+    )
 
 
 def test_place_edge_in_net_uses_typed_resolved_anchors_for_role_aware_placement(

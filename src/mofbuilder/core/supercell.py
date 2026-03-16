@@ -551,6 +551,8 @@ class EdgeGraphBuilder:
         - V nodes become NODE entries (keeps index on superG for later reference).
         - CV nodes become EDGE entries: incident edge f_points are merged and
           X->x pairings are resolved via make_paired_Xto_x.
+        - Real V-V edges are also converted into EDGE entries so mixed
+          V-E-C / V-E-V topologies preserve all edge types.
         - Virtual edges in superG are preserved in the resulting eG.
         """
         eG = nx.Graph()
@@ -629,6 +631,41 @@ class EdgeGraphBuilder:
                                 index="E_" + str(2 * edge_count),
                                 type="real")
                 edge_count += 1
+
+        handled_vv_pairs = set()
+        for u, v, edge_data in superG.edges(data=True):
+            if edge_data.get("type") == "virtual":
+                continue
+            if superG.nodes[u].get("note") != "V" or superG.nodes[v].get("note") != "V":
+                continue
+
+            pair_key = frozenset((u, v))
+            if pair_key in handled_vv_pairs:
+                continue
+            handled_vv_pairs.add(pair_key)
+
+            edge_name = "EDGE_" + str(2 * edge_count)
+            eG.add_node(
+                edge_name,
+                f_points=edge_data.get("f_points"),
+                fcoords=edge_data.get("fcoords"),
+                type="Edge",
+                edge_role_id=edge_data.get("edge_role_id"),
+                name="EDGE",
+                note="E",
+                index=2 * edge_count,
+            )
+            eG_index_name_dict[2 * edge_count] = edge_name
+            eG.add_edge(u, v, index="E_" + str(2 * edge_count), type="real")
+            eG.add_edge(edge_name,
+                        u,
+                        index="E_" + str(2 * edge_count),
+                        type="half")
+            eG.add_edge(edge_name,
+                        v,
+                        index="E_" + str(2 * edge_count),
+                        type="half")
+            edge_count += 1
 
         # Preserve virtual edges present in superG
         for u, v in superG.edges():
