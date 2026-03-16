@@ -1047,6 +1047,12 @@ class MetalOrganicFrameworkBuilder:
             return None
         return (float(flat[0]), float(flat[1]), float(flat[2]))
 
+    def _compute_slot_radius(self, anchor_vector):
+        source_anchor_vector = self._coerce_anchor_tuple(anchor_vector)
+        if source_anchor_vector is None:
+            return None
+        return float(np.linalg.norm(np.asarray(source_anchor_vector, dtype=float)))
+
     def _resolve_slot_source_atom_type(self, slot_type, attachment_coords_by_type):
         coords_by_type = attachment_coords_by_type or {}
         normalized_slot_type = str(slot_type) if slot_type is not None else None
@@ -1091,6 +1097,8 @@ class MetalOrganicFrameworkBuilder:
             if coords.ndim == 2 and source_ordinal < len(coords):
                 anchor_vector = self._coerce_anchor_tuple(coords[source_ordinal])
                 if anchor_vector is not None:
+                    compiled_rule["source_anchor_vector"] = anchor_vector
+                    compiled_rule["slot_radius"] = self._compute_slot_radius(anchor_vector)
                     compiled_rule["anchor_vector"] = anchor_vector
                     compiled_rule["anchor_point"] = anchor_vector
                     compiled_rule["anchor_position"] = anchor_vector
@@ -1181,13 +1189,19 @@ class MetalOrganicFrameworkBuilder:
             return {}
 
         payload = {
+            "target_anchor_direction": self._coerce_anchor_tuple(target_vector),
             "target_direction": self._coerce_anchor_tuple(target_vector),
             "target_vector": self._coerce_anchor_tuple(target_vector),
         }
 
-        source_anchor = self._coerce_anchor_tuple(local_slot_rule.get("anchor_vector"))
+        source_anchor = self._coerce_anchor_tuple(
+            local_slot_rule.get("source_anchor_vector")
+            or local_slot_rule.get("anchor_vector")
+        )
         if source_anchor is not None:
-            source_norm = float(np.linalg.norm(np.asarray(source_anchor, dtype=float)))
+            payload["source_anchor_vector"] = source_anchor
+            source_norm = self._compute_slot_radius(source_anchor)
+            payload["slot_radius"] = source_norm
             if source_norm > 1.0e-12:
                 target_anchor = local_center_vec + (target_vector / vector_norm) * source_norm
                 target_anchor_tuple = self._coerce_anchor_tuple(target_anchor)
@@ -1201,6 +1215,9 @@ class MetalOrganicFrameworkBuilder:
             "slot_type": local_slot_rule.get("slot_type"),
             "anchor_source_type": local_slot_rule.get("anchor_source_type"),
             "anchor_source_ordinal": local_slot_rule.get("anchor_source_ordinal"),
+            "source_anchor_vector": payload.get("source_anchor_vector"),
+            "slot_radius": payload.get("slot_radius"),
+            "target_anchor_direction": payload.get("target_anchor_direction"),
             "target_direction": payload.get("target_direction"),
             "target_anchor": payload.get("target_anchor"),
         }
@@ -1325,9 +1342,12 @@ class MetalOrganicFrameworkBuilder:
                         ),
                         "resolve_mode": instruction.get("resolve_mode"),
                         "is_null_edge": bool(instruction.get("is_null_edge", False)),
+                        "source_anchor_vector": target_anchor_payload.get("source_anchor_vector"),
+                        "slot_radius": target_anchor_payload.get("slot_radius"),
                         "target_anchor": target_anchor_payload.get("target_anchor"),
                         "target_point": target_anchor_payload.get("target_point"),
                         "target_vector": target_anchor_payload.get("target_vector"),
+                        "target_anchor_direction": target_anchor_payload.get("target_anchor_direction"),
                         "target_direction": target_anchor_payload.get("target_direction"),
                         "resolved_anchor": target_anchor_payload.get("resolved_anchor"),
                     }
@@ -1405,7 +1425,10 @@ class MetalOrganicFrameworkBuilder:
             edge_id = self._get_graph_edge_id(endpoint_node_ids)
             target_anchor_by_node = {}
             target_point_by_node = {}
+            source_anchor_vector_by_node = {}
+            slot_radius_by_node = {}
             target_vector_by_node = {}
+            target_anchor_direction_by_node = {}
             target_direction_by_node = {}
             resolved_anchor_by_node = {}
             for node_name in endpoint_node_ids:
@@ -1439,8 +1462,18 @@ class MetalOrganicFrameworkBuilder:
                 if target_anchor_payload.get("target_anchor") is not None:
                     target_anchor_by_node[str(node_name)] = target_anchor_payload["target_anchor"]
                     target_point_by_node[str(node_name)] = target_anchor_payload["target_point"]
+                if target_anchor_payload.get("source_anchor_vector") is not None:
+                    source_anchor_vector_by_node[str(node_name)] = (
+                        target_anchor_payload["source_anchor_vector"]
+                    )
+                if target_anchor_payload.get("slot_radius") is not None:
+                    slot_radius_by_node[str(node_name)] = target_anchor_payload["slot_radius"]
                 if target_anchor_payload.get("target_vector") is not None:
                     target_vector_by_node[str(node_name)] = target_anchor_payload["target_vector"]
+                if target_anchor_payload.get("target_anchor_direction") is not None:
+                    target_anchor_direction_by_node[str(node_name)] = (
+                        target_anchor_payload["target_anchor_direction"]
+                    )
                 if target_anchor_payload.get("target_direction") is not None:
                     target_direction_by_node[str(node_name)] = target_anchor_payload["target_direction"]
                 if target_anchor_payload.get("resolved_anchor") is not None:
@@ -1494,7 +1527,10 @@ class MetalOrganicFrameworkBuilder:
                     "bundle_owner_role_id": instruction.get("bundle_owner_role_id"),
                     "target_anchor_by_node": target_anchor_by_node,
                     "target_point_by_node": target_point_by_node,
+                    "source_anchor_vector_by_node": source_anchor_vector_by_node,
+                    "slot_radius_by_node": slot_radius_by_node,
                     "target_vector_by_node": target_vector_by_node,
+                    "target_anchor_direction_by_node": target_anchor_direction_by_node,
                     "target_direction_by_node": target_direction_by_node,
                     "resolved_anchor_by_node": resolved_anchor_by_node,
                 },

@@ -1702,20 +1702,32 @@ def test_snapshot_export_compiles_typed_resolved_anchors_from_builder_owned_atta
     assert va_slot_rule["source_atom_type"] == "XA"
     assert va_slot_rule["anchor_source_type"] == "XA"
     assert va_slot_rule["anchor_source_ordinal"] == 0
+    assert va_slot_rule["source_anchor_vector"] == (2.0, 0.0, 0.0)
+    assert va_slot_rule["slot_radius"] == pytest.approx(2.0)
     assert va_slot_rule["anchor_vector"] == (2.0, 0.0, 0.0)
 
     ca_slot_rule = runtime_snapshot.node_role_records["node:CA"].slot_rules[1]
     assert ca_slot_rule["anchor_source_type"] == "XA"
     assert ca_slot_rule["anchor_source_ordinal"] == 1
+    assert ca_slot_rule["source_anchor_vector"] == (0.0, 1.0, 0.0)
+    assert ca_slot_rule["slot_radius"] == pytest.approx(1.0)
     assert ca_slot_rule["anchor_vector"] == (0.0, 1.0, 0.0)
 
     constraint = optimization_snapshot.graph_node_records["V0"].incident_edge_constraints[0]
     assert constraint["resolved_anchor"]["anchor_source_type"] == "XA"
+    assert constraint["source_anchor_vector"] == (2.0, 0.0, 0.0)
+    assert constraint["slot_radius"] == pytest.approx(2.0)
     assert constraint["target_anchor"] == (2.0, 0.0, 0.0)
+    assert constraint["target_anchor_direction"] == (3.0, 0.0, 0.0)
     assert constraint["target_direction"] == (3.0, 0.0, 0.0)
 
     edge_metadata = optimization_snapshot.graph_edge_records["V0|C0"].metadata
     assert edge_metadata["target_anchor_by_node"]["V0"] == (2.0, 0.0, 0.0)
+    assert edge_metadata["source_anchor_vector_by_node"]["V0"] == (2.0, 0.0, 0.0)
+    assert edge_metadata["slot_radius_by_node"]["V0"] == pytest.approx(2.0)
+    assert edge_metadata["source_anchor_vector_by_node"]["C0"] == (1.0, 0.0, 0.0)
+    assert edge_metadata["slot_radius_by_node"]["C0"] == pytest.approx(1.0)
+    assert edge_metadata["target_anchor_direction_by_node"]["V0"] == (3.0, 0.0, 0.0)
     assert edge_metadata["resolved_anchor_by_node"]["V0"]["anchor_source_type"] == "XA"
     assert optimization_snapshot.metadata["phase_bounded"] == "phase_4_resolved_anchors"
 
@@ -1753,15 +1765,25 @@ def test_snapshot_export_preserves_legacy_literal_x_anchor_compatibility():
     assert va_slot_rule["source_atom_type"] == "X"
     assert va_slot_rule["anchor_source_type"] == "X"
     assert va_slot_rule["anchor_resolution_mode"] == "legacy_literal_X_compatibility"
+    assert va_slot_rule["source_anchor_vector"] == (1.5, 0.0, 0.0)
+    assert va_slot_rule["slot_radius"] == pytest.approx(1.5)
     assert va_slot_rule["anchor_vector"] == (1.5, 0.0, 0.0)
 
     constraint = optimization_snapshot.graph_node_records["V0"].incident_edge_constraints[0]
     assert constraint["resolved_anchor"]["anchor_source_type"] == "X"
+    assert constraint["source_anchor_vector"] == (1.5, 0.0, 0.0)
+    assert constraint["slot_radius"] == pytest.approx(1.5)
     assert constraint["target_anchor"] == (1.5, 0.0, 0.0)
+
+    edge_metadata = optimization_snapshot.graph_edge_records["V0|C0"].metadata
+    assert edge_metadata["source_anchor_vector_by_node"]["V0"] == (1.5, 0.0, 0.0)
+    assert edge_metadata["slot_radius_by_node"]["V0"] == pytest.approx(1.5)
 
     edge_slot_rule = runtime_snapshot.edge_role_records["edge:EA"].slot_rules[0]
     assert edge_slot_rule["source_atom_type"] == "X"
     assert edge_slot_rule["anchor_resolution_mode"] == "legacy_literal_X_compatibility"
+    assert edge_slot_rule["source_anchor_vector"] == (1.0, 0.0, 0.0)
+    assert edge_slot_rule["slot_radius"] == pytest.approx(1.0)
 
 
 @pytest.mark.core

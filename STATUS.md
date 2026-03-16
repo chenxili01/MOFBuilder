@@ -1,7 +1,7 @@
 ## Workflow Status
 
-- Phase: Phase 2
-- Checkpoint: phase-2-ready-for-executor
+- Phase: Phase 3
+- Checkpoint: phase-3-ready-for-execution
 - Status: READY_FOR_EXECUTION
 - Next step: executor
 - Last update: 2026-03-16
@@ -18,9 +18,14 @@ degrading already-valid semantic seed rotations in covered cases.
 
 ## Current Focus
 
-Phase 1 is complete as documentation-only work.
-The active handoff is now Phase 2, which preserves real source-anchor radial
-shape in the covered seam before local SVD inputs are constructed.
+Phase 2 is complete.
+Builder-owned semantics now preserve the real `source_anchor_vector` and
+derived `slot_radius` on resolved slot rules, incident edge constraints, and
+edge metadata while keeping existing `anchor_vector` payloads and legacy
+literal-`X` compatibility explicit.
+The active handoff is now Phase 3, which replaces the covered legacy
+uniform-scale orientation proxy with shape-preserving pseudo-anchor
+construction when source-shape data is available.
 
 ## Phase 1 Contract
 
@@ -42,22 +47,27 @@ Required terminology:
 
 ## Executor Handoff
 
-1. Stay within Phase 2 only. Allowed files are `builder.py`, `optimizer.py`,
+1. Stay within Phase 3 only. Allowed files are
+   `src/mofbuilder/core/optimizer.py`,
+   `src/mofbuilder/core/optimizer_contract.py`,
+   `src/mofbuilder/core/builder.py`,
    `tests/`, and workflow markdown files only.
-2. Preserve real source-anchor radial shape in the covered seam before local
-   SVD inputs are constructed.
-3. Keep the ownership seam unchanged: graph/topology is the source of truth,
+2. Audit the covered orientation-pair construction paths and replace the
+   covered `legacy uniform-scale orientation proxy` with shape-preserving
+   pseudo-anchor construction.
+3. Use the preserved `source_anchor_vector` and `slot_radius` from Phase 2 to
+   construct target-side pseudo anchors from `target_anchor_direction` without
+   flattening all covered slots to one shared scale.
+4. Keep fallback explicit and bounded when source-shape data is absent;
+   backward compatibility remains required, but compatibility behavior is not
+   the semantic source of truth.
+5. Keep the ownership seam unchanged: graph/topology is the source of truth,
    builder owns semantics, optimizer consumes compiled semantics, framework
    remains role-agnostic.
-4. Keep the compatibility statement explicit: backward compatibility remains
-   required, but compatibility behavior is not the semantic source of truth.
-5. Confirm semantics still precede geometry and null edge remains distinct from
+6. Confirm semantics still precede geometry and null edge remains distinct from
    zero-length real edge.
-6. Stop immediately if the work widens into target pseudo-anchor redesign,
-   downstream stage guarding, framework changes, graph grammar changes, or
-   broad optimizer-flow redesign.
-7. After Phase 2 implementation is complete, run the checklist review, update
-   `STATUS.md` for the next phase handoff, and append `WORKLOG.md`.
+7. Stop immediately if the work widens into downstream optimizer guarding,
+   framework changes, graph grammar changes, or broad optimizer redesign.
 
 ## Invariants
 

@@ -215,20 +215,66 @@ stop losing physically distinct slot-radius shape before local alignment
 
 Execution plan for this phase only:
 
-1. Audit the covered source-anchor inputs used by the local alignment seam.
-2. Preserve real source-anchor radial shape so per-slot radius differences survive.
-3. Keep compatibility behavior explicit where shape data is absent.
-4. Add bounded tests for one shape-preserved case and one compatibility case.
-5. Do not yet replace target-side orientation pseudo-anchor construction or add
+1. Audit the covered builder-owned and optimizer-consumed source-anchor surfaces
+   in `src/mofbuilder/core/builder.py` and `src/mofbuilder/core/optimizer.py`
+   to identify where real source-anchor vectors already exist and where
+   per-slot radius/shape data is dropped before the local alignment seam.
+2. Preserve the real `source_anchor_vector` and derived `slot_radius` on the
+   covered builder-compiled slot-rule and edge-metadata payloads so
+   heterogeneous per-slot radii survive into optimizer-consumable semantics.
+3. Keep existing compatibility fields and fallbacks explicit and bounded when
+   shape data is absent, including current `anchor_vector` behavior and legacy
+   literal-`X` compatibility.
+4. Add bounded tests for one heterogeneous-radius shape-preserved case and one
+   compatibility case that confirm the preserved source-shape data survives into
+   the covered local SVD input seam without changing later-phase behavior.
+5. Do not yet replace target-side orientation pseudo-anchor construction, do
+   not modify `src/mofbuilder/core/optimizer_contract.py`, and do not add
    downstream optimizer guarding in this phase.
 
 Executor handoff constraints:
 
-- Allowed files: builder.py, optimizer.py, tests/, workflow markdown files only.
-- Required outcome: covered source-anchor inputs retain real slot-radius shape.
-- Required compatibility statement: compatibility fallback remains explicit and bounded.
-- Stop rule: stop immediately if the work widens into target pseudo-anchor redesign,
-  downstream stage guarding, framework changes, graph grammar changes, or broad rollout.
+- Allowed files: `src/mofbuilder/core/builder.py`,
+  `src/mofbuilder/core/optimizer.py`, `tests/`, and workflow markdown files
+  only.
+- Required audit targets:
+  `MetalOrganicFrameworkBuilder._compile_resolved_slot_rules`,
+  `MetalOrganicFrameworkBuilder._build_target_anchor_payload`,
+  `MetalOrganicFrameworkBuilder._build_graph_edge_records`,
+  `NetOptimizer._resolve_semantic_node_anchor_position`, and
+  `NetOptimizer._resolve_semantic_edge_anchor_coords`.
+- Required outcome: covered source-anchor inputs retain the real
+  `source_anchor_vector` and `slot_radius` so the local alignment seam can read
+  preserved per-slot shape instead of only a flattened compatibility proxy.
+- Required compatibility statement: compatibility fallback remains explicit and
+  bounded; backward compatibility remains required, but compatibility behavior
+  is not the semantic source of truth.
+- Stop rule: stop immediately if the work widens into target pseudo-anchor
+  redesign, `optimizer_contract.py` changes, downstream stage guarding,
+  framework changes, graph grammar changes, or broad optimizer-flow rollout.
+
+Implementation-ready execution checklist for this phase only:
+
+1. Trace the current covered seam in
+   `src/mofbuilder/core/builder.py`,
+   `src/mofbuilder/core/optimizer.py`,
+   `tests/test_core_builder.py`, and
+   `tests/test_core_optimizer.py`.
+2. Add only the bounded source-shape fields needed for Phase 2 so builder-owned
+   resolved slot rules and edge metadata preserve `source_anchor_vector` and
+   `slot_radius` alongside existing compatibility payloads.
+3. Keep optimizer ownership unchanged: optimizer consumes the builder-compiled
+   shape fields but does not invent new semantic meaning or redesign the local
+   orientation-pair construction in this phase.
+4. Extend tests with:
+   one shape-preservation regression proving heterogeneous slot radii survive
+   from builder snapshot compilation into optimizer-consumable semantics, and
+   one compatibility regression proving legacy literal-`X` or absent-shape
+   fallback remains explicit and unchanged.
+5. Validate with targeted Phase 2 coverage only, then stop after the preserved
+   source-shape seam is in place and later-phase work is still pending.
+6. Then run the checklist review, update `STATUS.md` for Phase 2 completion and
+   Phase 3 readiness, and append `WORKLOG.md` with the bounded Phase 2 changes.
 
 # Phase 3 — Orientation Pair Construction Fix
 
