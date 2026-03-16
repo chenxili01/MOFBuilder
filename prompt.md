@@ -1,118 +1,112 @@
-used a real phase roadmap in PLAN.md, with sequential named phases, per-phase primary goals, executor rules, and a stop rule. That structure is explicit in your previous PLAN.md and PHASE_SPEC.md.
-restored the “Phase Roadmap” section style from the optimizer branch, where each phase has a title and a primary goal block.
+Generate a repository control-document set in a zip for a two-agent engineering workflow.
 
-restored the executor sequencing rule: phases are implemented sequentially, one phase only.
+I want the files written in a strict, clean, concise, reproducible style with these characteristics:
 
-restored the PLAN ↔ PHASE_SPEC pairing, where PLAN.md describes roadmap intent and PHASE_SPEC.md defines implementation boundaries.
+GLOBAL STYLE
+- Markdown only.
+- Short, explicit sections with clear headings.
+- Declarative engineering tone, not conversational.
+- Dense, high-signal writing with minimal fluff.
+- Strong use of “must”, “must not”, “do not”, “preserve”, “confirm”, “remains”.
+- Bullet lists for constraints and responsibilities.
+- Code blocks for canonical terms, statuses, APIs, invariants, and examples.
+- Explicit ownership boundaries, invariants, non-goals, validation rules, and exit criteria.
+- Narrow scope control: every file should reduce ambiguity and prevent scope drift.
+- No marketing tone, no storytelling, no generic filler.
 
-kept the same governance style from AGENTS.md, including planner/executor split and conservative scope control.
+WORKFLOW MODEL
+- Two agents only: Planner and Executor.
+- Planner creates a single-phase, implementation-ready plan.
+- Executor implements only the active phase, performs self-review, and updates status/worklog.
+- No reviewer role.
+- Plan-driven development with strict phase boundaries.
+- Architecture and ownership must remain stable unless explicitly changed by plan.
 
+WRITE THESE FILES WITH THESE PURPOSES AND STYLES:
 
+1. AGENTS.md
+- Style: governance contract / operating constitution.
+- Include: purpose, governance model, agent roles, self-review requirement, architectural invariants, development phases, execution safety rules.
+- Tone: strict, procedural, authoritative.
 
-Follow the exact working style of my previous branch control-doc workflow.
+2. PLAN.md
+- Style: roadmap + phase program spec.
+- Include: branch objective, architectural invariants, ownership rules, design rules, sequential phases, stop rule.
+- Each phase should explain the goal, scope, and what it is not doing.
+- Tone: strategic but concrete.
 
-I want a fresh control-doc set for a new branch, but it must reuse the same routine and discipline as my previous branch development style:
+3. PHASE_SPEC.md
+- Style: hard boundary implementation spec.
+- For each phase include: Allowed Modules, Required Work, Forbidden Changes, Completion Criteria.
+- Tone: restrictive and execution-oriented.
 
-- Planner / Executor split only
-- planner is planning-only
-- executor is implementation-only
-- executor implements one phase only
-- PLAN.md must contain a real sequential phase roadmap
-- PHASE_SPEC.md must map each phase to:
-  - allowed modules
-  - required work
-  - forbidden changes
-  - completion criteria
-- STATUS.md must show:
-  - active phase
+4. ARCHITECTURE.md
+- Style: high-level technical architecture narrative.
+- Include: branch context, workflow, core principle, system layers, ownership boundaries, source-of-truth rules, compatibility requirements, future handoff.
+- Tone: explanatory and stable.
+
+5. ARCHITECTURE_DECISIONS.md
+- Style: ADR log.
+- Each ADR must use:
+  - Context
+  - Decision
+  - Consequences
+- Tone: formal and crisp.
+
+6. CODEX_CONTEXT.md
+- Style: quick repo/operator orientation brief.
+- Include: repository map, branch context, pipeline, current problem context, immediate goal, invariants, ownership summary, stop rule.
+- Tone: compressed and practical.
+
+7. CHECKLIST.md
+- Style: pre-flight and post-change safety checklist.
+- Include: required reading, architecture safety checks, compatibility checks, scope checks, validation planning, self-review checks.
+- Tone: procedural and auditable.
+
+8. PLANNER.md
+- Style: role prompt for the planner agent.
+- Include: role definition, core rules, source-of-truth precedence, expected workflow, exact required output shape, success condition.
+- Tone: deterministic and instruction-heavy.
+
+9. EXECUTOR.md
+- Style: role prompt for the executor agent.
+- Include: role definition, core rules, source-of-truth precedence, required workflow, validation expectations, exact required output shape.
+- Tone: deterministic and implementation-focused.
+
+10. STATUS.md
+- Style: compact workflow state snapshot.
+- Keep short and structured.
+- Start with fixed bullet fields such as:
+  - Phase
+  - Checkpoint
+  - Status
+  - Next step
+  - Last update
+- Then include branch, objective, current focus, invariants.
+- Tone: minimal and stateful.
+
+11. WORKLOG.md
+- Style: append-only chronological engineering log.
+- Include a fixed entry template with:
+  - date / role / short title
+  - branch
+  - phase
   - checkpoint
-  - status
-  - next-step owner
-- WORKLOG.md must be append-only and use the same structured entry format
-- CHECKLIST.md must enforce invariants, scope control, compatibility, and self-review
-- preserve my architecture style:
-  - graph/topology is source of truth
-  - builder owns semantics
-  - optimizer consumes compiled semantics
-  - framework remains role-agnostic
-  - backward compatibility preserved
-  - semantics before geometry
-  - null edge distinct from zero-length real edge
-- no broad redesign
-- no future-phase leakage
-- no vague summaries in place of real phases
-- no simplified docs
-- make it repo-operational and concrete
+  - summary
+  - files touched
+  - invariants checked
+  - validation
+  - notes
+- Tone: factual, honest, operational.
 
-When drafting, first summarize the branch objective in one paragraph, then produce the files in the same style and level of detail as my previous branch, not a lighter version.
+12. HANDOFF DOC (example: SNAPSHOT_API_HANDOFF.md)
+- Style: downstream handoff contract.
+- Include: branch status at handoff, ownership summary, implemented surfaces, concrete available fields, expected future contract, intended future flow, non-goals, open decisions, readiness statement.
+- Tone: descriptive, stable, documentation-only.
 
-
-
-Use my previous branch routine exactly: full phased control-doc workflow, not a simplified draft. Mirror the same PLAN.md + PHASE_SPEC.md + STATUS.md + WORKLOG.md discipline, with strict planner/executor separation, invariant-first architecture, one-phase-only execution, explicit validations, and honest blocker reporting.
-
-
-
-Task
-Fix PdbReader anchor filtering for typed atoms.
-
-Scope
-basic.py, pdb_reader.py, tests
-
-Constraints
-Do not change builder/runtime schema.
-Preserve legacy X behavior.
-
-Done
-Typed atoms are preserved.
-Legacy X still works.
-Regression test added.
-
-Use my structured development style, but choose the lightest control level that still preserves architecture.
-
-Default to planner + executor only.
-Skip reviewer unless the task changes architecture, ownership boundaries, or rollout safety.
-
-If the task is small, use a lightweight format:
-- task
-- scope
-- constraints
-- validation
-- completion note
-
-If the task is branch-sized or compatibility-sensitive, use my full routine:
-- PLAN.md with real phases
-- PHASE_SPEC.md
-- STATUS.md
-- WORKLOG.md
-- CHECKLIST.md
-
-Preserve my core style:
-- graph/topology is source of truth
-- builder owns semantics
-- optimizer consumes compiled semantics
-- framework remains role-agnostic
-- backward compatibility preserved
-- semantics before geometry
-- no future-phase leakage
-- honest validation and blockers
-
-Optimize for full control with minimal unnecessary ceremony.
-
-
-For tiny tasks
-
-Use spec-first lightweight
-
-For bug fixes
-
-Use issue-driven
-
-For uncertain design work
-
-Use spike-then-harden
-
-For large architecture branches
-
-Use your current planner + executor phased control-doc style
-
-That would give you the benefits of other styles without losing the control you value.
+OUTPUT REQUIREMENTS
+- Make every file consistent with the same governance model and vocabulary.
+- Preserve explicit ownership boundaries.
+- Preserve backward compatibility language.
+- Use phase-gated execution language.
+- Keep the documents clean, concise, and reusable as control docs for future GPT-driven coding workflows.

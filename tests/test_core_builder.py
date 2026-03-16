@@ -206,6 +206,38 @@ def _attachment_rows(rows):
     return np.array(rows, dtype=object)
 
 
+@pytest.mark.core
+def test_compile_attachment_metadata_preserves_flattened_row_alignment():
+    builder = MetalOrganicFrameworkBuilder(mof_family="TEST-MULTI")
+
+    metadata, lookup = builder._compile_attachment_metadata(
+        {
+            "XB": _attachment_rows(
+                [
+                    ["XB", "XB1", 1, "NODE", 1, "0.0", "0.0", "2.0", 1.0, 0.0, "XB"],
+                ]
+            ),
+            "XA": _attachment_rows(
+                [
+                    ["XA", "XA1", 2, "NODE", 1, "2.0", "0.0", "0.0", 1.0, 0.0, "XA"],
+                    ["XA", "XA2", 3, "NODE", 1, "0.0", "2.0", "0.0", 1.0, 0.0, "XA"],
+                ]
+            ),
+        }
+    )
+
+    assert metadata == (
+        {"slot_type": "XA", "slot_ordinal": 0, "row_index": 0},
+        {"slot_type": "XA", "slot_ordinal": 1, "row_index": 1},
+        {"slot_type": "XB", "slot_ordinal": 0, "row_index": 2},
+    )
+    assert lookup == {
+        ("XA", 0): 0,
+        ("XA", 1): 1,
+        ("XB", 0): 2,
+    }
+
+
 def _configure_phase_four_anchor_inputs(
     builder,
     *,
@@ -529,6 +561,14 @@ def test_role_registries_consume_phase_two_metadata_without_local_role_maps():
         ],
         [[0.0, 1.0, 0.0]],
     )
+    assert builder.node_role_registry["node:cluster"]["node_attachment_metadata"] == (
+        {"slot_type": "X", "slot_ordinal": 0, "row_index": 0},
+        {"slot_type": "XA", "slot_ordinal": 0, "row_index": 1},
+    )
+    assert builder.node_role_registry["node:cluster"]["node_attachment_lookup"] == {
+        ("X", 0): 0,
+        ("XA", 0): 1,
+    }
     assert builder.node_role_registry["node:porphyrin"]["node_data"] is None
     assert (
         builder.edge_role_registry["edge:tetratopic"]["linker_frag_length"] == 12.5
@@ -547,6 +587,28 @@ def test_role_registries_consume_phase_two_metadata_without_local_role_maps():
         ]["XB"],
         [[2.0, 0.0, 0.0]],
     )
+    assert builder.edge_role_registry["edge:tetratopic"][
+        "linker_center_attachment_metadata"
+    ] == (
+        {"slot_type": "X", "slot_ordinal": 0, "row_index": 0},
+        {"slot_type": "XB", "slot_ordinal": 0, "row_index": 1},
+    )
+    assert builder.edge_role_registry["edge:tetratopic"][
+        "linker_center_attachment_lookup"
+    ] == {
+        ("X", 0): 0,
+        ("XB", 0): 1,
+    }
+    assert builder.edge_role_registry["edge:tetratopic"][
+        "linker_outer_attachment_metadata"
+    ] == (
+        {"slot_type": "X", "slot_ordinal": 0, "row_index": 0},
+    )
+    assert builder.edge_role_registry["edge:tetratopic"][
+        "linker_outer_attachment_lookup"
+    ] == {
+        ("X", 0): 0,
+    }
     assert builder.edge_role_registry["edge:ditopic"]["linker_center_data"] is None
 
 

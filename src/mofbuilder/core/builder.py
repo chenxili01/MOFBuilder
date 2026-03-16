@@ -183,10 +183,14 @@ class MetalOrganicFrameworkBuilder:
         self.linker_center_X_data = None
         self.linker_center_attachment_data_by_type = {}
         self.linker_center_attachment_coords_by_type = {}
+        self.linker_center_attachment_metadata = ()
+        self.linker_center_attachment_lookup = {}
         self.linker_outer_data = None
         self.linker_outer_X_data = None
         self.linker_outer_attachment_data_by_type = {}
         self.linker_outer_attachment_coords_by_type = {}
+        self.linker_outer_attachment_metadata = ()
+        self.linker_outer_attachment_lookup = {}
         self.linker_frag_length = None
         self.linker_fake_edge = False
 
@@ -199,6 +203,8 @@ class MetalOrganicFrameworkBuilder:
         self.node_X_data = None
         self.node_attachment_data_by_type = {}
         self.node_attachment_coords_by_type = {}
+        self.node_attachment_metadata = ()
+        self.node_attachment_lookup = {}
         self.dummy_atom_node_dict = None
 
         #need to be set by user
@@ -526,6 +532,30 @@ class MetalOrganicFrameworkBuilder:
                 dtype=float,
             )
         return coords_by_type
+
+    def _compile_attachment_metadata(self, attachment_data_by_type):
+        metadata = []
+        lookup = {}
+        row_index = 0
+        for slot_type in sorted(attachment_data_by_type or {}):
+            rows = attachment_data_by_type.get(slot_type)
+            if rows is None:
+                continue
+            rows_array = np.asarray(rows, dtype=object)
+            if rows_array.size == 0:
+                continue
+            if rows_array.ndim == 1:
+                rows_array = rows_array.reshape(1, -1)
+            for slot_ordinal in range(rows_array.shape[0]):
+                entry = {
+                    "slot_type": str(slot_type),
+                    "slot_ordinal": int(slot_ordinal),
+                    "row_index": int(row_index),
+                }
+                metadata.append(entry)
+                lookup[(entry["slot_type"], entry["slot_ordinal"])] = entry["row_index"]
+                row_index += 1
+        return tuple(metadata), lookup
 
     def _recenter_attachment_data_by_type(
         self,
@@ -2246,6 +2276,8 @@ class MetalOrganicFrameworkBuilder:
                 "node_X_data": None,
                 "node_attachment_data_by_type": {},
                 "node_attachment_coords_by_type": {},
+                "node_attachment_metadata": (),
+                "node_attachment_lookup": {},
                 "dummy_atom_node_dict": None,
             }
 
@@ -2268,10 +2300,14 @@ class MetalOrganicFrameworkBuilder:
                 "linker_center_X_data": None,
                 "linker_center_attachment_data_by_type": {},
                 "linker_center_attachment_coords_by_type": {},
+                "linker_center_attachment_metadata": (),
+                "linker_center_attachment_lookup": {},
                 "linker_outer_data": None,
                 "linker_outer_X_data": None,
                 "linker_outer_attachment_data_by_type": {},
                 "linker_outer_attachment_coords_by_type": {},
+                "linker_outer_attachment_metadata": (),
+                "linker_outer_attachment_lookup": {},
                 "linker_frag_length": None,
                 "linker_fake_edge": False,
             }
@@ -2290,6 +2326,12 @@ class MetalOrganicFrameworkBuilder:
             role_entry["node_attachment_coords_by_type"] = dict(
                 self.node_attachment_coords_by_type
             )
+            role_entry["node_attachment_metadata"] = tuple(
+                self.node_attachment_metadata
+            )
+            role_entry["node_attachment_lookup"] = dict(
+                self.node_attachment_lookup
+            )
             role_entry["dummy_atom_node_dict"] = self.dummy_atom_node_dict
 
     def _update_edge_role_registry_data(self):
@@ -2306,6 +2348,12 @@ class MetalOrganicFrameworkBuilder:
             role_entry["linker_center_attachment_coords_by_type"] = dict(
                 self.linker_center_attachment_coords_by_type
             )
+            role_entry["linker_center_attachment_metadata"] = tuple(
+                self.linker_center_attachment_metadata
+            )
+            role_entry["linker_center_attachment_lookup"] = dict(
+                self.linker_center_attachment_lookup
+            )
             role_entry["linker_outer_data"] = self.linker_outer_data
             role_entry["linker_outer_X_data"] = self.linker_outer_X_data
             role_entry["linker_outer_attachment_data_by_type"] = dict(
@@ -2313,6 +2361,12 @@ class MetalOrganicFrameworkBuilder:
             )
             role_entry["linker_outer_attachment_coords_by_type"] = dict(
                 self.linker_outer_attachment_coords_by_type
+            )
+            role_entry["linker_outer_attachment_metadata"] = tuple(
+                self.linker_outer_attachment_metadata
+            )
+            role_entry["linker_outer_attachment_lookup"] = dict(
+                self.linker_outer_attachment_lookup
             )
             role_entry["linker_frag_length"] = self.linker_frag_length
             role_entry["linker_fake_edge"] = self.linker_fake_edge
@@ -2417,6 +2471,12 @@ class MetalOrganicFrameworkBuilder:
                 self.linker_center_attachment_data_by_type
             )
         )
+        (
+            self.linker_center_attachment_metadata,
+            self.linker_center_attachment_lookup,
+        ) = self._compile_attachment_metadata(
+            self.linker_center_attachment_data_by_type
+        )
 
         if self.frame_linker.linker_connectivity > 2:
             #RECENTER COM of outer data
@@ -2458,6 +2518,12 @@ class MetalOrganicFrameworkBuilder:
                     self.linker_outer_attachment_data_by_type
                 )
             )
+            (
+                self.linker_outer_attachment_metadata,
+                self.linker_outer_attachment_lookup,
+            ) = self._compile_attachment_metadata(
+                self.linker_outer_attachment_data_by_type
+            )
 
             self.linker_frag_length = np.linalg.norm(
                 self.linker_outer_X_data[0, 5:8].astype(float) -
@@ -2465,6 +2531,8 @@ class MetalOrganicFrameworkBuilder:
         else:
             self.linker_outer_attachment_data_by_type = {}
             self.linker_outer_attachment_coords_by_type = {}
+            self.linker_outer_attachment_metadata = ()
+            self.linker_outer_attachment_lookup = {}
             self.linker_frag_length = np.linalg.norm(
                 self.linker_center_X_data[0, 5:8].astype(float) -
                 self.linker_center_X_data[1, 5:8].astype(float))
@@ -2502,6 +2570,10 @@ class MetalOrganicFrameworkBuilder:
         self.node_attachment_coords_by_type = self._extract_attachment_coords_by_type(
             self.node_attachment_data_by_type
         )
+        (
+            self.node_attachment_metadata,
+            self.node_attachment_lookup,
+        ) = self._compile_attachment_metadata(self.node_attachment_data_by_type)
         self.dummy_atom_node_dict = self.frame_nodes.dummy_node_split_dict
         self._update_node_role_registry_data()
 
