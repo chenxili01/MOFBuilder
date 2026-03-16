@@ -25,7 +25,7 @@ from ..utils.geometry import (unit_cell_to_cartesian_matrix,
                               find_optimal_pairings, find_edge_pairings,
                               Carte_points_generator)
 from .other import fetch_X_atoms_ind_array, find_pair_x_edge_fc, order_edge_array
-from .superimpose import superimpose_rotation_only
+from .superimpose import superimpose_topology_hungarian
 
 
 class SupercellBuilder:

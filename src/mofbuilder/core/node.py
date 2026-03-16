@@ -16,7 +16,7 @@ from veloxchem.errorhandler import assert_msg_critical
 from veloxchem.molecule import Molecule
 
 from ..io.basic import nn, nl
-from .superimpose import superimpose
+from .superimpose import superimpose_topology_hungarian
 from ..io.pdb_reader import PdbReader
 from ..io.pdb_writer import PdbWriter
 
@@ -203,8 +203,8 @@ class FrameNode:
 
     def _order_ccoords(self, d_ccoords, template, target_metal_coords):
         d_ccoords -= target_metal_coords
-        _, rot, _ = superimpose(template, d_ccoords)
-        return np.dot(template, rot) + target_metal_coords
+        _, rot, _ = superimpose_topology_hungarian(template, d_ccoords)
+        return template @ rot + target_metal_coords
 
     def _add_dummy_atoms_nodepdb(self):
         metal = self.node_metal_type

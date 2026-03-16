@@ -29,7 +29,7 @@ from ..io.gro_writer import GroWriter
 from ..io.xyz_writer import XyzWriter
 from ..io.cif_writer import CifWriter
 from ..utils.geometry import cartesian_to_fractional, fractional_to_cartesian
-from .superimpose import superimpose_rotation_only
+from .superimpose import superimpose_topology_hungarian
 
 
 class MofWriter:

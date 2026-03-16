@@ -35,7 +35,7 @@ from .optimizer_contract import (
 )
 from .other import fetch_X_atoms_ind_array
 from .runtime_snapshot import OptimizationSemanticSnapshot
-from .superimpose import superimpose_rotation_only
+from .superimpose import superimpose_topology_hungarian
 
 
 class NetOptimizer:
@@ -281,9 +281,9 @@ class NetOptimizer:
             #opt_rot_pre, _ = self.opt_drv._optimize_rotations_pre(
             #    num_nodes, G, node_X_pos_dict, ini_rot)
             opt_rot_pre = ini_rot
-            #opt_rot_aft, _ = self.opt_drv._optimize_rotations_after(
-            #    num_nodes, G, node_X_pos_dict, opt_rot_pre)
-            opt_rot_aft = opt_rot_pre
+            opt_rot_aft, _ = self.opt_drv._optimize_rotations_after(
+                num_nodes, G, node_X_pos_dict, opt_rot_pre)
+            #opt_rot_aft = opt_rot_pre
         else:
             opt_rot_aft = saved_optimized_rotations.reshape(-1, 3, 3)
 
@@ -986,7 +986,7 @@ class NetOptimizer:
                     rot = rot_record[indices[0]]
                     # rot = reorthogonalize_matrix(rot)
                 else:
-                    _, rot, trans = superimpose_rotation_only(
+                    _, rot, trans = superimpose_topology_hungarian(
                         extended_e_xx_vec, xx_vector)
                     # rot = reorthogonalize_matrix(rot)
                     norm_xx_vector_record.append({
@@ -2036,8 +2036,11 @@ def get_rot_trans_matrix(node, G, sorted_nodes, Xatoms_positions_dict):
     vecsA, _ = recenter_and_norm_vectors(node_xvecs, extra_mass_center=None)
     v2, node_center = get_connected_nodes_vectors(node, G)
     vecsB, _ = recenter_and_norm_vectors(v2, extra_mass_center=node_center)
-    _, rot, tran = superimpose_rotation_only(vecsA, vecsB)
-    return rot, tran
+    rmsd, rot, trans = superimpose_topology_hungarian(vecsA, vecsB)
+
+    
+    
+    return rot
 
 
 def expand_set_rots(pname_set_dict, set_rotations, sorted_nodes):

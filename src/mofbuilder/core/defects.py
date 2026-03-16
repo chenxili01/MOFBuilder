@@ -24,7 +24,7 @@ from ..utils.geometry import (unit_cell_to_cartesian_matrix,
                               find_optimal_pairings, find_edge_pairings,
                               Carte_points_generator)
 from .other import fetch_X_atoms_ind_array, find_pair_x_edge_fc, order_edge_array
-from .superimpose import superimpose_rotation_only, superimpose
+from .superimpose import superimpose_topology_hungarian
 
 
 class TerminationDefectGenerator:
@@ -446,7 +446,7 @@ class TerminationDefectGenerator:
             if len(indices) == 1:
                 rot = node_oovecs_record[indices[0]][1]
             else:
-                _, rot, _ = superimpose(term_xoovecs, node_xoo_cvecs)
+                _, rot, _ = superimpose_topology_hungarian(term_xoovecs, node_xoo_cvecs)
                 node_oovecs_record.append((node_xoo_cvecs, rot))
 
             adjusted_term_vecs = np.dot(term_coords, rot) + node_oo_center_cvec
@@ -638,7 +638,7 @@ class TerminationDefectGenerator:
             new_n_fcoords = cartesian_to_fractional(new_n_ccoords,
                                                     sc_unit_cell_inv)
 
-            _, rot, trans = superimpose(new_n_x_fcoords, old_n_x_fcoords)
+            _, rot, trans = superimpose_topology_hungarian(new_n_x_fcoords, old_n_x_fcoords)
             replaced_linker_fcoords = np.dot(new_n_fcoords, rot) + old_n_com
             replaced_linker_f_points = np.hstack(
                 (new_n_atoms, replaced_linker_fcoords))

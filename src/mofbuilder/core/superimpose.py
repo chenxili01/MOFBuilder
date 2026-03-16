@@ -1,172 +1,117 @@
-"""Superposition of point sets: SVD-based alignment and rotation-only matching."""
-
-from __future__ import annotations
-
-import itertools
-from typing import List, Tuple, Union
-
 import numpy as np
+from typing import Union, List, Tuple
+
+try:
+    from scipy.optimize import linear_sum_assignment
+except ImportError as e:
+    raise ImportError(
+        "This function requires scipy. Install it with: pip install scipy"
+    ) from e
 
 
-def sort_by_distance(arr: np.ndarray) -> List[Tuple[float, int]]:
-    """Sort indices by distance from the first point to each point in arr.
-
-    Args:
-        arr: (N, 3) array of points.
-
-    Returns:
-        List of (distance, index) tuples sorted by ascending distance.
-    """
-    distances = [(np.linalg.norm(arr[0] - arr[i]), i) for i in range(len(arr))]
-    distances.sort(key=lambda x: x[0])
-    return distances
+ArrayLike = Union[np.ndarray, List]
 
 
-def match_vectors(
-    arr1: np.ndarray, arr2: np.ndarray, num: int
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Select num points from each set by distance-from-first ordering and return aligned subsets.
-
-    Picks the num closest points to the first element in each array, then returns
-    those subsets in the same distance order for use in superimposition.
-
-    Args:
-        arr1: First (N1, 3) array of points.
-        arr2: Second (N2, 3) array of points.
-        num: Number of points to select from each (e.g. min(6, len(arr1), len(arr2))).
-
-    Returns:
-        Tuple (closest_vectors_arr1, closest_vectors_arr2): (num, 3) arrays.
-    """
-    sorted_distances_arr1 = sort_by_distance(arr1)
-    sorted_distances_arr2 = sort_by_distance(arr2)
-
-    # Select the indices by distance matching in limited number
-
-    indices_arr1 = [sorted_distances_arr1[j][1] for j in range(num)]
-    indices_arr2 = [sorted_distances_arr2[j][1] for j in range(num)]
-
-    # reorder the matching vectors# which can induce the smallest RMSD
-    closest_vectors_arr1 = np.array([arr1[i] for i in indices_arr1])
-    closest_vectors_arr2 = np.array([arr2[i] for i in indices_arr2])
-
-    return closest_vectors_arr1, closest_vectors_arr2
-
-
-def superimpose(
-    src_arr: Union[np.ndarray, List],
-    target_arr: Union[np.ndarray, List],
-    min_rmsd: float = 1e6,
+def superimpose_topology_hungarian(
+    src_arr: ArrayLike,
+    target_arr: ArrayLike,
+    max_iter: int = 50,
+    tol: float = 1e-8,
 ) -> Tuple[float, np.ndarray, np.ndarray]:
-    """Find the best rotation and translation that aligns src_arr to target_arr.
-
-    Procedure:
-    - Convert inputs to numpy arrays.
-    - Select up to 6 matching vectors from each set based on distance patterns
-      (using match_vectors). This reduces the search space for correspondences.
-    - Try all permutations of the selected vectors from arr1 and compute the
-      SVD-based superposition against the selected vectors from arr2.
-    - Keep the rotation/translation that yields the smallest RMSD.
-
-    Args:
-        src_arr: Source point set (N, 3).
-        target_arr: Target point set (M, 3).
-        min_rmsd: Initial RMSD threshold; best solution below this is kept.
+    """
+    Align src_arr to target_arr while preserving the original src_arr order.
 
     Returns:
-        Tuple of (min_rmsd, best_rot, best_tran): best RMSD, 3x3 rotation matrix,
-        translation vector (length 3).
+        rmsd, rot, trans
+
+    Notes:
+        - src_arr itself is never modified or reordered.
+        - Internally, target points are re-matched to src points by Hungarian assignment.
+        - The returned rot/trans apply directly to the original src_arr:
+              aligned = src_arr @ rot + trans
     """
-    # Ensure inputs are numpy arrays
-    src_arr = np.asarray(src_arr)
-    target_arr = np.asarray(target_arr)
+    src = np.asarray(src_arr, dtype=float)
+    target = np.asarray(target_arr, dtype=float)
 
-    # Select up to 6 representative vectors from each array to match by distance
-    m_src, m_target = match_vectors(src_arr, target_arr,
-                                    min(6, len(src_arr), len(target_arr)))
+    if src.ndim != 2 or src.shape[1] != 3:
+        raise ValueError(f"src_arr must have shape (N, 3), got {src.shape}")
+    if target.ndim != 2 or target.shape[1] != 3:
+        raise ValueError(f"target_arr must have shape (N, 3), got {target.shape}")
+    if src.shape != target.shape:
+        raise ValueError(
+            f"src_arr and target_arr must have the same shape, got "
+            f"{src.shape} and {target.shape}"
+        )
 
-    # Initialize best transformation to identity/no-translation
-    best_rot, best_tran = np.eye(3), np.zeros(3)
+    n = src.shape[0]
 
-    # Try every possible correspondence (permutation) of the selected vectors
-    for perm in itertools.permutations(m_src):
-        # Compute RMSD, rotation and translation for this correspondence
-        rmsd, rot, tran = svd_superimpose(np.asarray(perm), m_target)
+    def kabsch(src_pts: np.ndarray, tgt_pts: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Return rotation and translation aligning src_pts to tgt_pts."""
+        com_src = src_pts.mean(axis=0)
+        com_tgt = tgt_pts.mean(axis=0)
 
-        # Keep the transform that gives the smallest RMSD
-        if rmsd < min_rmsd:
-            min_rmsd, best_rot, best_tran = rmsd, rot, tran
+        src_c = src_pts - com_src
+        tgt_c = tgt_pts - com_tgt
 
-    return min_rmsd, best_rot, best_tran
+        cov = src_c.T @ tgt_c
+        U, _, Vt = np.linalg.svd(cov)
 
+        rot = U @ Vt
+        if np.linalg.det(rot) < 0:
+            Vt[-1, :] *= -1.0
+            rot = U @ Vt
 
-def svd_superimpose(
-    src_arr: Union[np.ndarray, List], target_arr: Union[np.ndarray, List]
-) -> Tuple[float, np.ndarray, np.ndarray]:
-    """Compute RMSD and rotation/translation for superimposing two point sets via SVD.
+        trans = com_tgt - com_src @ rot
+        return rot, trans
 
-    Ref.: "Least-Squares Fitting of Two 3-D Point Sets", IEEE Trans. Pattern
-    Anal. Mach. Intell., 1987, PAMI-9(5), 698-700. DOI: 10.1109/TPAMI.1987.4767965
+    def rmsd_of(src_pts: np.ndarray, tgt_pts: np.ndarray, rot: np.ndarray, trans: np.ndarray) -> float:
+        diff = tgt_pts - (src_pts @ rot + trans)
+        return np.sqrt(np.mean(np.sum(diff**2, axis=1)))
 
-    Args:
-        src_arr: Source point set (N, 3).
-        target_arr: Target point set (M, 3); N should equal M for meaningful RMSD.
+    # Initial guess: identity correspondence
+    matched_target = target.copy()
+    best_rmsd = np.inf
+    best_rot = np.eye(3)
+    best_trans = np.zeros(3)
 
-    Returns:
-        Tuple of (rmsd, rot_mat, trans): RMSD, 3x3 rotation matrix, translation vector.
-    """
+    prev_assignment = None
 
-    src_arr = np.array(src_arr)
-    target_arr = np.array(target_arr)
+    for _ in range(max_iter):
+        # Solve rigid transform for current correspondence
+        rot, trans = kabsch(src, matched_target)
 
-    com1 = np.sum(src_arr, axis=0) / src_arr.shape[0]
-    com2 = np.sum(target_arr, axis=0) / target_arr.shape[0]
+        # Transform original src (without modifying or reordering it)
+        src_aligned = src @ rot + trans
 
-    src_arr -= com1
-    target_arr -= com2
+        # Build squared-distance cost matrix between transformed src and target
+        diff = src_aligned[:, None, :] - target[None, :, :]
+        cost = np.sum(diff**2, axis=2)
 
-    cov_mat = np.matmul(src_arr.T, target_arr)
-    U, s, Vt = np.linalg.svd(cov_mat)
+        # Find best one-to-one assignment
+        row_ind, col_ind = linear_sum_assignment(cost)
 
-    rot_mat = np.matmul(U, Vt)
-    if np.linalg.det(rot_mat) < 0:
-        Vt[-1, :] *= -1.0
-        rot_mat = np.matmul(U, Vt)
+        # linear_sum_assignment returns sorted row_ind, but we make it explicit
+        perm = np.empty(n, dtype=int)
+        perm[row_ind] = col_ind
 
-    diff = target_arr - np.matmul(src_arr, rot_mat)
-    rmsd = np.sqrt(np.sum(diff**2) / diff.shape[0])
-    trans = com2 - np.dot(com1, rot_mat)
+        matched_target_new = target[perm]
 
-    return rmsd, rot_mat, trans
+        # Recompute transform with updated correspondence
+        rot_new, trans_new = kabsch(src, matched_target_new)
+        rmsd_new = rmsd_of(src, matched_target_new, rot_new, trans_new)
 
+        if rmsd_new < best_rmsd:
+            best_rmsd = rmsd_new
+            best_rot = rot_new
+            best_trans = trans_new
 
-def superimpose_rotation_only(
-    arr1: Union[np.ndarray, List],
-    arr2: Union[np.ndarray, List],
-    min_rmsd: float = 1e6,
-) -> Tuple[float, np.ndarray, np.ndarray]:
-    """Find the best rotation (no translation) that aligns arr1 to arr2 by minimizing RMSD.
+        # Convergence: assignment unchanged or RMSD improvement tiny
+        if prev_assignment is not None and np.array_equal(perm, prev_assignment):
+            break
+        if np.allclose(matched_target_new, matched_target, atol=tol, rtol=0.0):
+            break
 
-    Uses the same permutation search over matched subsets as superimpose, but keeps
-    translation fixed (identity). Useful when only orientation matters.
+        matched_target = matched_target_new
+        prev_assignment = perm
 
-    Args:
-        arr1: Source point set (N, 3).
-        arr2: Target point set (M, 3).
-        min_rmsd: Initial RMSD threshold; best solution below this is kept.
-
-    Returns:
-        Tuple (min_rmsd, best_rot, best_tran): best RMSD, 3x3 rotation, translation (often zero).
-    """
-    arr1 = np.asarray(arr1)
-    arr2 = np.asarray(arr2)
-    m_arr1, m_arr2 = match_vectors(arr1, arr2, min(6, len(arr1), len(arr2)))
-    best_rot, best_tran = np.eye(3), np.zeros(3)
-    for perm in itertools.permutations(m_arr1):
-        rmsd, rot, tran = svd_superimpose(np.asarray(perm), m_arr2)
-        if rmsd < min_rmsd:
-            min_rmsd, best_rot, best_tran = rmsd, rot, tran
-            if np.allclose(np.dot(best_tran, np.zeros(3)), 1e-2):
-                break
-
-    return min_rmsd, best_rot, best_tran
+    return best_rmsd, best_rot, best_trans

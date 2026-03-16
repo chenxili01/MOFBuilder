@@ -13,7 +13,7 @@ from .runtime_snapshot import (
     NodeRoleRecord,
     OptimizationSemanticSnapshot,
 )
-from .superimpose import svd_superimpose
+from .superimpose import superimpose_topology_hungarian
 
 
 FrozenMapping = Mapping[str, Any]
@@ -761,7 +761,7 @@ def _fit_rotation_from_point_pairs(
     source_points: np.ndarray,
     target_points: np.ndarray,
 ) -> Tuple[float, np.ndarray]:
-    rmsd, rotation_matrix, _ = svd_superimpose(source_points, target_points)
+    rmsd, rotation_matrix, _ =superimpose_topology_hungarian(source_points, target_points)
     return float(rmsd), rotation_matrix
 
 
