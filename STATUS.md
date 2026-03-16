@@ -1,9 +1,9 @@
 # STATUS.md
 
 - Phase: Phase 3
-- Checkpoint: phase-3-complete
+- Checkpoint: workflow-complete
 - Status: COMPLETED
-- Next step: planner
+- Next step: done
 - Last update: 2026-03-16
 
 ---
