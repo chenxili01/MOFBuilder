@@ -549,6 +549,53 @@ Executor handoff constraints:
 - Stop rule: stop immediately if the work widens architecture scope, ownership boundaries,
   or rollout scope.
 
+Implementation-ready execution checklist for this phase only:
+
+1. Audit only the bounded Phase 7 seam in
+   `tests/test_core_optimizer.py`,
+   `src/mofbuilder/core/optimizer.py`, and
+   workflow markdown files,
+   starting from the existing covered rollout/debug entry points:
+   `NetOptimizer._compile_role_aware_initial_rotations`,
+   `NetOptimizer._build_guarded_debug_record`,
+   `NetOptimizer._build_guarded_fallback_debug_records`, and
+   `NetOptimizer.place_edge_in_net`.
+2. Extend regression coverage only where the current bounded seam still needs
+   final hardening across the three required case classes:
+   one covered typed shape-preserving rollout case,
+   one explicit legacy literal-`X` compatibility fallback case, and
+   one mixed typed resolved-anchor source placement case.
+   Reuse and tighten the existing role-aware optimizer tests rather than
+   widening into new modules or new family support.
+3. Add `src/mofbuilder/core/optimizer.py` changes only if a narrow explicit
+   debug or failure surface is required to make the added regressions
+   inspectable. Any such change must stay limited to bounded status,
+   fallback-reason, guard-reason, pair-count, or missing-input reporting for
+   the already-covered `ROLE-AWARE` seam.
+4. Keep all unsupported or compatibility cases explicit and honest:
+   legacy literal-`X`, missing-shape, missing-target-direction,
+   unsupported-family, and missing resolved-anchor metadata cases must remain
+   on their existing bounded fallback or error paths.
+   Backward compatibility remains required, but compatibility behavior is not
+   the semantic source of truth.
+5. Preserve the ownership seam and invariants unchanged:
+   graph/topology remains the source of truth,
+   builder owns semantics,
+   optimizer consumes compiled semantics,
+   framework remains role-agnostic,
+   semantics still precede geometry, and
+   null edge remains distinct from zero-length real edge.
+6. Update workflow docs only as needed so the final handoff states covered
+   versus unsupported Phase 7 scope honestly, including any bounded debug or
+   failure surface added by this phase, without implying new family support or
+   broader rollout.
+7. Validate with targeted Phase 7 coverage only, then stop as soon as the
+   bounded regressions, inspectable debug/failure surfaces, and final handoff
+   notes are in place.
+8. Do not modify `builder.py`, `optimizer_contract.py`, framework behavior,
+   graph grammar, rollout eligibility, family support, or the global optimizer
+   pipeline in this phase.
+
 ---
 
 # Executor Rules
