@@ -2,8 +2,7 @@
 
 This branch stabilizes role-aware local rotation initialization by correcting the
 geometry representation used during SVD alignment and by preventing downstream
-optimizer stages from degrading already-valid semantic seed rotations in covered
-cases.
+optimizer stages from degrading already-valid semantic placements.
 
 ## Branch Contract
 
@@ -25,11 +24,6 @@ The required terminology for this branch is:
 - `legacy uniform-scale orientation proxy`: the prior flattened orientation-only construction where
   source/target directions are normalized and assigned one shared scale
 
-Covered Phase 1 rule:
-
-valid `source_anchor_vector` and `slot_radius` geometry must not be flattened into
-the `legacy uniform-scale orientation proxy` before covered SVD initialization.
-
 ## Ownership Seam
 
 Raw fragment geometry and graph/topology semantics are upstream inputs only.
@@ -40,20 +34,12 @@ Builder-owned runtime and snapshot compilation must:
 - compile optimizer-consumable anchor semantics
 - remain the owner of semantic interpretation
 
-Framework must:
-
-- remain role-agnostic
-- not become a semantic source of truth for anchor legality or role meaning
-
 Optimizer must:
 
 - consume compiled anchor semantics
 - use geometry only after semantic legality is established
 - not reinterpret graph legality or builder ownership
 - not flatten valid source-anchor geometry when constructing local SVD inputs
-
-Backward compatibility remains required, but compatibility behavior is not the
-semantic source of truth.
 
 ## Architectural Invariants
 

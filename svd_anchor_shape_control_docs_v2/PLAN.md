@@ -33,22 +33,6 @@ Stabilize role-aware rotation initialization by correcting the geometry
 representation used during SVD alignment and by preventing downstream optimizer
 stages from degrading already-valid semantic seed rotations in covered cases.
 
-Anchor-geometry failure class:
-
-valid role-aware source-anchor geometry must not be flattened into a
-uniform-radius orientation proxy before covered SVD initialization, and valid
-semantic seed rotations must not be degraded afterward by geometry-only
-refinement stages that do not preserve the same semantic objective.
-
-Required terminology for this branch:
-
-- `source_anchor_vector`
-- `target_anchor_direction`
-- `slot_radius`
-- `shape-preserving pseudo anchor`
-- `role-aware seed rotation`
-- `legacy uniform-scale orientation proxy`
-
 This branch must implement the agreed bounded flow:
 
 source-anchor shape preservation
@@ -111,11 +95,6 @@ builder-owned interpretation layer, not from downstream geometry heuristics.
 Builder remains the only owner of semantic interpretation and compiled anchor
 meaning. Optimizer consumes compiled semantics only.
 
-## 2a. Framework remains role-agnostic
-
-Framework behavior remains role-agnostic and must not become a semantic source
-of truth for anchor legality, role meaning, or compatibility interpretation.
-
 ## 3. Semantics before geometry
 
 Geometry may refine already-legal semantic placements, but geometry must not
@@ -126,11 +105,6 @@ replace semantic legality or flatten valid semantic anchor structure prematurely
 When the covered seam requires local SVD alignment, the real source-anchor
 radius/shape must remain available. Orientation-only alignment must not default
 to a uniform-radius proxy when source-shape information exists.
-
-Required compatibility rule:
-
-backward compatibility remains required, but compatibility behavior is not the
-semantic source of truth.
 
 ## 5. No broad redesign
 
@@ -184,25 +158,6 @@ Executor handoff constraints:
   compatibility behavior is not the semantic source of truth.
 - Stop rule: stop immediately if Phase 1 would require production code, tests,
   runtime payloads, or workflow automation changes.
-
-Implementation-ready execution checklist for this phase only:
-
-1. Audit the current control docs only:
-   `ARCHITECTURE.md`, `PLAN.md`, `PHASE_SPEC.md`, and `STATUS.md`.
-2. Update those docs so the same Phase 1 contract appears consistently:
-   the branch objective, the anchor-geometry failure class, the required
-   terminology list, the forbidden uniform-radius flattening behavior, and the
-   ownership seam.
-3. State the Phase 1 compatibility rule explicitly in the docs:
-   backward compatibility remains required, but compatibility behavior is not
-   the semantic source of truth.
-4. Confirm the docs state, without ambiguity, that semantics precede geometry
-   and that null edge remains distinct from zero-length real edge.
-5. Stop after the documentation contract is consistent and future phases are
-   still described as pending work rather than implemented behavior.
-6. Then run the Phase 1 checklist review, update `STATUS.md` for Phase 1
-   completion and Phase 2 readiness, and append `WORKLOG.md` with the bounded
-   documentation-only changes.
 
 # Phase 2 — Source Anchor Shape Preservation
 

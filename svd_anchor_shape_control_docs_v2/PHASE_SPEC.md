@@ -43,24 +43,6 @@ role-agnostic framework contract
 
 # Phase 1 — Anchor Geometry Contract
 
-## Phase 1 Contract
-
-Anchor-geometry failure class:
-
-valid role-aware source-anchor geometry must not be flattened into a
-uniform-radius orientation proxy before covered SVD initialization, and valid
-semantic seed rotations must not be degraded afterward by geometry-only
-refinement stages that do not preserve the same semantic objective.
-
-Required terminology:
-
-- `source_anchor_vector`
-- `target_anchor_direction`
-- `slot_radius`
-- `shape-preserving pseudo anchor`
-- `role-aware seed rotation`
-- `legacy uniform-scale orientation proxy`
-
 ## Allowed Modules
 
 workflow markdown files
@@ -78,14 +60,9 @@ workflow markdown files
 - Document the ownership seam:
   graph/topology as source of truth,
   builder owns semantics,
-  optimizer consumes compiled semantics,
-  framework remains role-agnostic.
+  optimizer consumes compiled semantics.
 - State directly that semantics precede geometry.
 - State directly that null edge remains distinct from zero-length real edge.
-- State directly that backward compatibility remains required, but compatibility
-  behavior is not the semantic source of truth.
-- State directly that valid source-anchor geometry must not be flattened into a
-  uniform-radius orientation proxy before covered SVD initialization.
 
 ## Forbidden Changes
 
@@ -96,7 +73,6 @@ Do not modify production code, tests, runtime payloads, or workflow automation c
 control docs are initialized
 ownership boundaries are explicit
 failure class is named directly
-compatibility rule is explicit and bounded
 future-phase work is not implied as already implemented
 
 ---

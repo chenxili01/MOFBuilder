@@ -277,10 +277,12 @@ class NetOptimizer:
 
         if not self.skip_rotation_optimization:
             ####TODO: modified for mil53
-            opt_rot_pre, _ = self.opt_drv._optimize_rotations_pre(
-                num_nodes, G, node_X_pos_dict, ini_rot)
-            opt_rot_aft, _ = self.opt_drv._optimize_rotations_after(
-                num_nodes, G, node_X_pos_dict, opt_rot_pre)
+            #opt_rot_pre, _ = self.opt_drv._optimize_rotations_pre(
+            #    num_nodes, G, node_X_pos_dict, ini_rot)
+            opt_rot_pre = ini_rot
+            #opt_rot_aft, _ = self.opt_drv._optimize_rotations_after(
+            #    num_nodes, G, node_X_pos_dict, opt_rot_pre)
+            opt_rot_aft = opt_rot_pre
         else:
             opt_rot_aft = saved_optimized_rotations.reshape(-1, 3, 3)
 
