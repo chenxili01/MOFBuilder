@@ -373,19 +373,53 @@ preserve valid semantic seeds during bounded downstream refinement
 
 Execution plan for this phase only:
 
-1. Audit covered downstream refinement stages that can degrade valid semantic seeds.
-2. Add narrow guarding, skip, or freeze behavior for covered semantic-anchor cases only.
-3. Preserve backward compatibility and bounded rollout.
-4. Add bounded tests for one valid-seed-preservation case.
-5. Do not redesign the full optimizer objective or widen architecture scope.
+1. Audit the covered downstream seam in `src/mofbuilder/core/optimizer.py`
+   where `NetOptimizer._compile_role_aware_initial_rotations` currently
+   compiles a Phase 4 `role-aware seed rotation` and then unconditionally
+   commits `compile_local_constrained_refinement(...)` output over that seed.
+2. Keep the Phase 4 seed-generation path unchanged and keep
+   `src/mofbuilder/core/optimizer_contract.py` unchanged in this phase; any
+   Phase 5 behavior must be applied only after a valid rigid/SVD seed has
+   already been produced for the covered node.
+3. Add a narrow covered-case guard in `src/mofbuilder/core/optimizer.py` that
+   preserves or freezes the Phase 4 seed rotation/translation when a covered
+   geometry-only refinement stage would otherwise degrade an already-valid
+   semantic seed in a case backed by shape-preserving semantic anchor inputs.
+4. Keep uncovered cases and explicit compatibility fallbacks on the existing
+   downstream path. Backward compatibility remains required, but compatibility
+   behavior is not the semantic source of truth and must not become the default
+   for covered semantic cases.
+5. Extend the role-aware debug surface so the guard outcome is explicit:
+   whether the selected result came from the rigid seed or the downstream
+   refinement, and the bounded reason when the guard preserved the seed.
+6. Extend only `tests/test_core_optimizer.py` with one bounded regression that
+   proves a covered shape-preserving semantic seed is preserved when a mocked or
+   constructed downstream refinement would otherwise move it away from the valid
+   Phase 4 seed.
+7. Validate targeted Phase 5 coverage only, then stop without changing the
+   downstream objective function, search schedule, builder semantics, framework
+   behavior, graph grammar, optimizer pipeline order, or Phase 6 compatibility
+   rollout.
 
 Executor handoff constraints:
 
-- Allowed files: optimizer.py, tests/, workflow markdown files only.
-- Required outcome: covered valid semantic seeds are not degraded by downstream refinement.
-- Required compatibility statement: any guard behavior is explicit, narrow, and documented honestly.
-- Stop rule: stop immediately if the work widens into global optimizer-objective redesign,
-  framework changes, pipeline reorder, or broad rollout changes.
+- Allowed files: `src/mofbuilder/core/optimizer.py`, `tests/`, and workflow
+  markdown files only.
+- Required audit targets:
+  `NetOptimizer._compile_role_aware_initial_rotations`,
+  `NetOptimizer._build_guarded_debug_record`, and the existing role-aware local
+  placement regressions in `tests/test_core_optimizer.py`.
+- Required outcome: a covered Phase 4 `role-aware seed rotation` backed by
+  shape-preserving semantic anchor inputs is not overwritten by a downstream
+  geometry-only refinement stage that does not preserve the same semantic
+  objective.
+- Required compatibility statement: any guard behavior is explicit, narrow, and
+  documented honestly; uncovered and compatibility cases retain their existing
+  path.
+- Stop rule: stop immediately if the work requires changing
+  `optimizer_contract.py`, redesigning the refinement objective or search,
+  reordering the optimizer pipeline, reopening builder ownership, changing
+  framework behavior, or widening into Phase 6 rollout work.
 
 # Phase 6 — Compatibility Layer and Guarded Rollout
 

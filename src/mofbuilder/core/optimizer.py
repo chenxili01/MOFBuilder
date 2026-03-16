@@ -522,9 +522,18 @@ class NetOptimizer:
                     error_message=str(exc),
                 )
                 continue
-            placement_records[node_id] = refinement
+            (
+                selected_placement,
+                selected_pose_source,
+                guard_reason,
+                covered_shape_preserving_case,
+            ) = self._select_guarded_role_aware_local_placement(
+                selected_initialization,
+                refinement,
+            )
+            placement_records[node_id] = selected_placement
             initial_rotations[group_name] = np.asarray(
-                refinement.rotation_matrix,
+                selected_placement.rotation_matrix,
                 dtype=float,
             )
             debug_records[node_id] = self._build_guarded_debug_record(
@@ -533,13 +542,57 @@ class NetOptimizer:
                 node_record=node_record,
                 node_contract=contract,
                 correspondences=correspondences,
+                rigid_initialization=selected_initialization,
                 refinement=refinement,
                 ambiguity_resolution=ambiguity_resolution,
+                covered_shape_preserving_case=covered_shape_preserving_case,
+                selected_pose_source=selected_pose_source,
+                guard_reason=guard_reason,
                 status="selected",
             )
         self.role_aware_local_placement_records = placement_records
         self.role_aware_local_placement_debug_records = debug_records
         return initial_rotations
+
+    def _is_shape_preserving_seed_guard_covered(self, rigid_initialization):
+        if rigid_initialization is None:
+            return False
+        metadata = rigid_initialization.metadata
+        return (
+            int(metadata.get("shape_preserving_orientation_pair_count", 0)) > 0
+            and int(metadata.get("legacy_orientation_proxy_pair_count", 0)) == 0
+        )
+
+    def _select_guarded_role_aware_local_placement(self,
+                                                   rigid_initialization,
+                                                   refinement):
+        covered_shape_preserving_case = (
+            self._is_shape_preserving_seed_guard_covered(rigid_initialization)
+        )
+        if not covered_shape_preserving_case:
+            return refinement, "downstream_refinement", None, False
+
+        rigid_rotation = np.asarray(rigid_initialization.rotation_matrix, dtype=float)
+        rigid_translation = np.asarray(
+            rigid_initialization.translation_vector,
+            dtype=float,
+        )
+        refined_rotation = np.asarray(refinement.rotation_matrix, dtype=float)
+        refined_translation = np.asarray(refinement.translation_vector, dtype=float)
+
+        if np.allclose(rigid_rotation, refined_rotation, atol=1.0e-8) and np.allclose(
+            rigid_translation,
+            refined_translation,
+            atol=1.0e-8,
+        ):
+            return refinement, "downstream_refinement", None, True
+
+        return (
+            rigid_initialization,
+            "rigid_seed",
+            "shape_preserving_semantic_seed_preserved",
+            True,
+        )
 
     def _convert_role_aware_rotation_to_optimizer_frame(self, rotation_matrix):
         """Convert contract-space row-vector rotations to the optimizer's stored frame."""
@@ -571,17 +624,28 @@ class NetOptimizer:
         node_record=None,
         node_contract=None,
         correspondences=None,
+        rigid_initialization=None,
         refinement=None,
         ambiguity_resolution=None,
+        covered_shape_preserving_case=False,
+        selected_pose_source=None,
+        guard_reason=None,
         fallback_reason=None,
         error_message=None,
     ):
         selected_assignment = {}
         candidate_scores = ()
         selected_candidate_score = None
+        active_rigid_initialization = rigid_initialization
+        if active_rigid_initialization is None and refinement is not None:
+            active_rigid_initialization = refinement.rigid_initialization
         if refinement is not None:
             selected_assignment = dict(
                 refinement.correspondence.edge_to_slot_index.items()
+            )
+        elif active_rigid_initialization is not None:
+            selected_assignment = dict(
+                active_rigid_initialization.correspondence.edge_to_slot_index.items()
             )
         if ambiguity_resolution is not None:
             candidate_scores = tuple(
@@ -591,8 +655,8 @@ class NetOptimizer:
             selected_candidate_score = float(
                 ambiguity_resolution.selected_candidate.score
             )
-        elif refinement is not None:
-            candidate_scores = (float(refinement.rigid_initialization.rmsd),)
+        elif active_rigid_initialization is not None:
+            candidate_scores = (float(active_rigid_initialization.rmsd),)
             selected_candidate_score = candidate_scores[0]
 
         null_edge_count = 0
@@ -633,28 +697,40 @@ class NetOptimizer:
                 if refinement is not None
                 else None
             ),
+            "selected_pose_source": selected_pose_source,
+            "guard_preserved_seed": guard_reason is not None,
+            "guard_reason": guard_reason,
+            "covered_shape_preserving_case": covered_shape_preserving_case,
             "orientation_only_pair_count": (
-                refinement.rigid_initialization.metadata.get(
+                active_rigid_initialization.metadata.get(
                     "orientation_only_pair_count",
                     0,
                 )
-                if refinement is not None
+                if active_rigid_initialization is not None
                 else 0
             ),
             "shape_preserving_orientation_pair_count": (
-                refinement.rigid_initialization.metadata.get(
+                active_rigid_initialization.metadata.get(
                     "shape_preserving_orientation_pair_count",
                     0,
                 )
-                if refinement is not None
+                if active_rigid_initialization is not None
+                else 0
+            ),
+            "stable_shape_support_pair_count": (
+                active_rigid_initialization.metadata.get(
+                    "stable_shape_support_pair_count",
+                    0,
+                )
+                if active_rigid_initialization is not None
                 else 0
             ),
             "legacy_orientation_proxy_pair_count": (
-                refinement.rigid_initialization.metadata.get(
+                active_rigid_initialization.metadata.get(
                     "legacy_orientation_proxy_pair_count",
                     0,
                 )
-                if refinement is not None
+                if active_rigid_initialization is not None
                 else 0
             ),
             "null_edge_count": null_edge_count,

@@ -296,6 +296,125 @@ def test_compile_role_aware_initial_rotations_supports_v_and_c_guarded_cases(
     assert optimizer.role_aware_local_placement_debug_records["C0"]["status"] == "selected"
 
 
+def test_compile_role_aware_initial_rotations_preserves_shape_preserving_seed_when_refinement_drifts(
+    monkeypatch,
+):
+    semantic_snapshot = OptimizationSemanticSnapshot(
+        family_name="ROLE-AWARE",
+        graph_phase="sG",
+        graph_node_records={
+            "V0": GraphNodeSemanticRecord(
+                node_id="V0",
+                role_id="node:VA",
+                role_class="V",
+            ),
+        },
+    )
+    optimizer = opt.NetOptimizer(semantic_snapshot=semantic_snapshot)
+    optimizer.sorted_nodes = ["V0"]
+    optimizer.use_role_aware_local_placement = True
+
+    rigid_rotation = (
+        (1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0),
+        (0.0, 0.0, 1.0),
+    )
+    rigid_translation = (1.0, 2.0, 3.0)
+    refinement_rotation = (
+        (0.0, -1.0, 0.0),
+        (1.0, 0.0, 0.0),
+        (0.0, 0.0, 1.0),
+    )
+    refinement_translation = (-4.0, 5.0, 6.0)
+
+    def fake_contract(node_id, semantic_snapshot=None):
+        return NodePlacementContract(
+            node_id=node_id,
+            node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+            node_role_class=semantic_snapshot.graph_node_records[node_id].role_class,
+            local_slot_types=("XA", "XB"),
+            incident_edge_ids=(f"{node_id}|E0", f"{node_id}|E1"),
+            resolve_mode_hints=("alignment_only",),
+            null_edge_flags={f"{node_id}|E0": False, f"{node_id}|E1": True},
+        )
+
+    def fake_correspondences(node_id, semantic_snapshot=None, **_kwargs):
+        return (
+            LegalNodeCorrespondence(
+                node_id=node_id,
+                node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+                edge_to_slot_index={f"{node_id}|E0": 0, f"{node_id}|E1": 1},
+            ),
+        )
+
+    def fake_rigid(node_id, semantic_snapshot=None, **_kwargs):
+        return NodeLocalRigidInitialization(
+            node_id=node_id,
+            node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+            correspondence=LegalNodeCorrespondence(
+                node_id=node_id,
+                node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+                edge_to_slot_index={f"{node_id}|E0": 0, f"{node_id}|E1": 1},
+            ),
+            anchor_pairs=(),
+            rotation_matrix=rigid_rotation,
+            translation_vector=rigid_translation,
+            rmsd=0.0,
+            source_anchor_representation="anchor_vector",
+            target_anchor_representation="target_point",
+            metadata={
+                "orientation_only_pair_count": 2,
+                "shape_preserving_orientation_pair_count": 2,
+                "stable_shape_support_pair_count": 2,
+                "legacy_orientation_proxy_pair_count": 0,
+            },
+        )
+
+    def fake_refinement(node_id, semantic_snapshot=None, rigid_initialization=None, **_kwargs):
+        return NodeLocalConstrainedRefinement(
+            node_id=node_id,
+            node_role_id=semantic_snapshot.graph_node_records[node_id].role_id,
+            correspondence=rigid_initialization.correspondence,
+            rigid_initialization=rigid_initialization,
+            rotation_matrix=refinement_rotation,
+            translation_vector=refinement_translation,
+            objective_value=0.0,
+            initial_objective_value=1.0,
+        )
+
+    monkeypatch.setattr(optimizer, "compile_node_placement_contract", fake_contract)
+    monkeypatch.setattr(
+        optimizer,
+        "compile_legal_node_correspondences",
+        fake_correspondences,
+    )
+    monkeypatch.setattr(optimizer, "compile_local_rigid_initialization", fake_rigid)
+    monkeypatch.setattr(
+        optimizer,
+        "compile_local_constrained_refinement",
+        fake_refinement,
+    )
+
+    rotations = optimizer._compile_role_aware_initial_rotations(
+        {"group:V": {"ind_ofsortednodes": [0]}},
+        semantic_snapshot=semantic_snapshot,
+    )
+
+    assert np.allclose(rotations["group:V"], np.asarray(rigid_rotation))
+    placement_record = optimizer.role_aware_local_placement_records["V0"]
+    assert np.allclose(placement_record.rotation_matrix, np.asarray(rigid_rotation))
+    assert np.allclose(placement_record.translation_vector, np.asarray(rigid_translation))
+
+    debug_record = optimizer.role_aware_local_placement_debug_records["V0"]
+    assert debug_record["status"] == "selected"
+    assert debug_record["selected_pose_source"] == "rigid_seed"
+    assert debug_record["guard_preserved_seed"] is True
+    assert debug_record["guard_reason"] == "shape_preserving_semantic_seed_preserved"
+    assert debug_record["covered_shape_preserving_case"] is True
+    assert debug_record["shape_preserving_orientation_pair_count"] == 2
+    assert debug_record["legacy_orientation_proxy_pair_count"] == 0
+
+
 def test_convert_role_aware_rotation_to_optimizer_frame_preserves_point_orientation():
     optimizer = opt.NetOptimizer()
     optimizer.sorted_nodes = ["V0"]

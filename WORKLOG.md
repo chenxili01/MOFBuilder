@@ -256,3 +256,60 @@ In [optimizer_contract.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuil
 [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md#L1) now marks Phase 4 complete and returns the workflow to Phase 5 planning only. [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md#L216) has the append-only Phase 4 executor entry.
 
 Validation passed via `python -m py_compile`, `git diff --check`, and a direct `PYTHONPATH=src python` assertion script covering the new two-anchor shape-preserving SVD case plus the existing orientation-only null-edge compatibility case. `python -m pytest` could not be run here because `pytest` is not installed in the available Python environment.
+
+
+## planner-run
+
+- Timestamp: 2026-03-16T12:18:04+00:00
+
+Active phase is `Phase 5`.
+
+I updated [PLAN.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/PLAN.md) to make Phase 5 implementation-ready and bounded to the actual guard seam in `NetOptimizer._compile_role_aware_initial_rotations`, with explicit audit targets, stop rules, and a required regression focused on preserving a covered `role-aware seed rotation`.
+
+I updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) to `READY FOR EXECUTION`, changed the checkpoint to `phase-5-handoff`, and set `Next step` to `executor`. The handoff now explicitly limits executor scope to `src/mofbuilder/core/optimizer.py`, `tests/`, and workflow markdown files, and it keeps `optimizer_contract.py`, the refinement objective/search, and broader pipeline behavior out of scope.
+
+No production code or tests were implemented.
+
+
+## executor-run
+
+- Timestamp: 2026-03-16T13:21:30+0100
+
+Implemented `Phase 5` only.
+
+Changed files:
+
+- [src/mofbuilder/core/optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py)
+- [tests/test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py)
+- [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md)
+- [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md)
+
+What changed:
+
+- added a narrow covered-case selector in [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py) so `NetOptimizer._compile_role_aware_initial_rotations` preserves the Phase 4 `role-aware seed rotation` when a shape-preserving semantic seed would otherwise be replaced by a drifting downstream geometry-only refinement
+- kept uncovered and explicit compatibility cases on the existing downstream refinement path, bounded coverage to rigid seeds backed by shape-preserving metadata without the `legacy uniform-scale orientation proxy`, and exposed the selected pose source plus bounded guard reason in the role-aware debug record
+- added one bounded Phase 5 regression in [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py) that forces downstream refinement drift and proves the covered shape-preserving seed rotation/translation are preserved
+- updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md) to mark Phase 5 complete and hand the workflow back to planner for the next bounded phase
+
+Validations:
+
+- ran `python -m py_compile src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`
+- ran `git diff --check`
+- ran a direct `PYTHONPATH=src python` assertion script with lightweight runtime stubs to verify the new Phase 5 guard preserves the covered shape-preserving seed and records the explicit debug outcome
+- `python -m pytest tests/test_core_optimizer.py -k \"preserves_shape_preserving_seed_when_refinement_drifts or supports_v_and_c_guarded_cases or records_selected_and_fallback_debug_details\"` could not be run in this shell because the available Python environment does not have `pytest`
+
+Risks:
+
+- Phase 6 still needs to define the bounded compatibility and rollout behavior for mixed or legacy fallback cases without widening the optimizer pipeline
+- the available shell is missing normal test dependencies, so only static checks and a stubbed direct assertion script were possible here
+
+
+## executor-run
+
+- Timestamp: 2026-03-16T12:26:07+00:00
+
+Implemented Phase 5 only.
+
+In [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py#L525), `NetOptimizer._compile_role_aware_initial_rotations` now preserves the covered Phase 4 `role-aware seed rotation` when downstream geometry-only refinement drifts away from a shape-preserving semantic seed. The guard is narrow: it applies only when the rigid seed carries shape-preserving metadata and no `legacy uniform-scale orientation proxy`, and the debug record now exposes `selected_pose_source`, `covered_shape_preserving_case`, and the bounded `guard_reason` in [optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/src/mofbuilder/core/optimizer.py#L618). I added one bounded regression in [test_core_optimizer.py](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/tests/test_core_optimizer.py#L299) that forces refinement drift and proves the covered seed pose is preserved. I also updated [STATUS.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/STATUS.md#L1) and appended the executor entry to [WORKLOG.md](/Users/chenxili/GitHub/Cursor_repo/mof_cursor/MOFbuilder/WORKLOG.md#L274).
+
+Validation passed with `python -m py_compile src/mofbuilder/core/optimizer.py tests/test_core_optimizer.py`, `git diff --check`, and a direct `PYTHONPATH=src python` assertion script using lightweight runtime stubs to exercise the new Phase 5 guard. `python -m pytest ...` could not be run here because this shell does not have `pytest` installed.
