@@ -87,6 +87,9 @@ class FrameLinker:
         self.center_class = None
         self.center_nodes = None
         self.fake_edge = False
+        self.canonical_role_metadata = None
+        self.center_role_aliases = ()
+        self.center_order_rule = None
 
     def check_dirs(self, passfilecheck: bool = True) -> None:
         """Create target_directory; optionally assert linker file exists. Set new_pdbfilename if save_files."""
@@ -264,6 +267,100 @@ class FrameLinker:
                 break
         return pairXs
 
+    def _build_attachment_records(self, center_Xs, center_fragment_coords):
+        """Annotate raw center attachments with coordinates while preserving order."""
+        records = []
+        for raw_index, x_idx in enumerate(center_Xs):
+            coord = np.asarray(center_fragment_coords[x_idx], dtype=float).reshape(3, )
+            records.append({
+                "raw_index": int(raw_index),
+                "node_index": int(x_idx),
+                "coord": coord,
+            })
+        return records
+
+    def _rotate_records_to_canonical_start(self, ordered_records, center, axis_x):
+        """Rotate a cyclic list to a deterministic start."""
+        if not ordered_records:
+            return ordered_records
+
+        projections = []
+        for index, rec in enumerate(ordered_records):
+            vector = rec["coord"] - center
+            projections.append((float(np.dot(vector, axis_x)), index))
+
+        _, start_index = max(projections, key=lambda item: item[0])
+        return ordered_records[start_index:] + ordered_records[:start_index]
+
+    def _sort_records_clockwise_local_topology(
+        self,
+        records,
+        center_fragment_coords,
+    ):
+        """Sort attachment records by clockwise angle in a best-fit local plane."""
+        del center_fragment_coords
+        coords = np.asarray([record["coord"] for record in records],
+                            dtype=float).reshape(-1, 3)
+        if coords.shape[0] < 3:
+            return list(records)
+
+        center = coords.mean(axis=0)
+        centered = coords - center
+        _, singular_values, vh = np.linalg.svd(centered, full_matrices=False)
+        if vh.shape[0] < 3 or np.allclose(singular_values, 0.0):
+            return list(records)
+
+        normal = vh[2]
+        axis_x = vh[0]
+        axis_y = np.cross(normal, axis_x)
+
+        axis_x_norm = np.linalg.norm(axis_x)
+        axis_y_norm = np.linalg.norm(axis_y)
+        normal_norm = np.linalg.norm(normal)
+        if np.isclose(axis_x_norm, 0.0) or np.isclose(axis_y_norm, 0.0) or np.isclose(
+                normal_norm, 0.0):
+            return list(records)
+
+        axis_x = axis_x / axis_x_norm
+        axis_y = axis_y / axis_y_norm
+
+        annotated = []
+        for record in records:
+            vector = record["coord"] - center
+            projected_x = float(np.dot(vector, axis_x))
+            projected_y = float(np.dot(vector, axis_y))
+            annotated.append((float(np.arctan2(projected_y, projected_x)), record))
+
+        annotated.sort(key=lambda item: item[0])
+        ccw_records = [record for _, record in annotated]
+        clockwise_records = list(reversed(ccw_records))
+        return self._rotate_records_to_canonical_start(
+            clockwise_records,
+            center=center,
+            axis_x=axis_x,
+        )
+
+    def _order_attachment_records(self, records, order_rule, center_fragment_coords):
+        """Apply passive metadata-driven ordering to center attachment records."""
+        if not records or order_rule is None:
+            return list(records)
+
+        order_kind = order_rule.get("order_kind")
+        if order_kind == "clockwise_local_topology":
+            ordered = self._sort_records_clockwise_local_topology(
+                records,
+                center_fragment_coords=center_fragment_coords,
+            )
+            expected = order_rule.get("ordered_attachment_indices", [])
+            if expected and len(expected) != len(ordered):
+                raise ValueError(
+                    "Attachment count does not match metadata rule: "
+                    f"{len(ordered)} attachments vs expected index count {len(expected)}"
+                )
+            return ordered
+
+        raise ValueError(f"Unsupported order_kind: {order_kind}")
+
     def _lines_of_center_frag(self, subgraph_center_frag, Xs_indices, metals):
         labels = self.molecule_labels
         coords = self.molecule_coords
@@ -272,13 +369,17 @@ class FrameLinker:
         count = 1
         lines = []
         Xs = []
+        ordered_x_index_map = {
+            int(node_idx): index
+            for index, node_idx in enumerate(Xs_indices)
+        }
         for cn in list(subgraph_center_frag.nodes):
             label = subgraph_center_frag.nodes[cn]["label"]
             coord = subgraph_center_frag.nodes[cn]["coords"]
-            if cn not in Xs_indices:
+            if cn not in ordered_x_index_map:
                 name = label + str(count)
             else:
-                name = "X" + str(count)
+                name = "X" + str(ordered_x_index_map[cn] + 1)
                 Xs.append(count - 1)
             count += 1
             lines.append([name, label, coord[0], coord[1], coord[2]])
@@ -526,8 +627,42 @@ class FrameLinker:
                 else:
                     outer_frag_nodes = f
 
+            center_fragment_subgraph = self.lG.subgraph(center_frag_nodes)
+            center_fragment_coords = {
+                int(node_idx): np.asarray(data["coords"], dtype=float).reshape(3, )
+                for node_idx, data in center_fragment_subgraph.nodes(data=True)
+            }
+            order_rule = self.center_order_rule
+            center_records = self._build_attachment_records(
+                center_Xs,
+                center_fragment_coords,
+            )
+            ordered_center_records = self._order_attachment_records(
+                center_records,
+                order_rule,
+                center_fragment_coords,
+            )
+            if order_rule is not None:
+                assert len(ordered_center_records) == len(center_records), (
+                    "Ordering must preserve attachment count"
+                )
+                ordered_node_ids = [
+                    record["node_index"] for record in ordered_center_records
+                ]
+                assert len(set(ordered_node_ids)) == len(ordered_node_ids), (
+                    "Attachment ordering must not duplicate node indices"
+                )
+                expected = order_rule.get("ordered_attachment_indices", [])
+                if expected:
+                    assert len(expected) == len(ordered_center_records), (
+                        "Metadata cyclic rule length must match extracted attachment count"
+                    )
+            ordered_center_Xs = [
+                record["node_index"] for record in ordered_center_records
+            ]
+
             self.lines, _ = self._lines_of_center_frag(
-                self.lG.subgraph(center_frag_nodes), center_Xs, self.metals)
+                center_fragment_subgraph, ordered_center_Xs, self.metals)
             self.rows, self.frag_Xs = self._lines_of_single_frag(
                 self.lG.subgraph(outer_frag_nodes),
                 branch_outer_Xs + branch_inner_Xs)

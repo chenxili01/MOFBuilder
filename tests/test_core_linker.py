@@ -106,3 +106,118 @@ def test_linker_create_public_api_with_injected_molecule():
     assert linker.linker_center_data.shape[1] == 11
 
 
+@pytest.mark.core
+def test_linker_attachment_ordering_preserves_raw_order_without_metadata_rule():
+    linker = FrameLinker()
+    coords = {
+        7: np.array([1.0, 0.0, 0.0]),
+        3: np.array([0.0, 1.0, 0.0]),
+        5: np.array([-1.0, 0.0, 0.0]),
+    }
+
+    records = linker._build_attachment_records([7, 3, 5], coords)
+    ordered = linker._order_attachment_records(records, None, coords)
+
+    assert [record["node_index"] for record in ordered] == [7, 3, 5]
+
+
+@pytest.mark.core
+def test_linker_clockwise_local_topology_reorders_and_emits_canonical_x_labels():
+    linker = FrameLinker()
+    linker.molecule_labels = []
+    linker.molecule_coords = np.zeros((0, 3))
+    linker.mass_center_angstrom = np.zeros(3)
+
+    coords = {
+        10: np.array([3.0, 0.0, 0.0]),
+        20: np.array([0.0, 1.0, 0.0]),
+        30: np.array([-1.0, 0.0, 0.0]),
+        40: np.array([0.0, -1.0, 0.0]),
+    }
+    records = linker._build_attachment_records([20, 40, 10, 30], coords)
+    order_rule = {
+        "order_kind": "clockwise_local_topology",
+        "ordered_attachment_indices": [0, 1, 2, 3],
+    }
+
+    ordered = linker._order_attachment_records(records, order_rule, coords)
+    ordered_again = linker._order_attachment_records(records, order_rule, coords)
+    ordered_node_ids = [record["node_index"] for record in ordered]
+
+    assert ordered_node_ids == [record["node_index"] for record in ordered_again]
+    assert set(ordered_node_ids) == {10, 20, 30, 40}
+    assert ordered_node_ids != [20, 40, 10, 30]
+
+    subgraph = nx.Graph()
+    for node_idx in [30, 10, 40, 20]:
+        subgraph.add_node(node_idx, label="C", coords=coords[node_idx])
+
+    lines, x_rows = linker._lines_of_center_frag(subgraph, ordered_node_ids, [])
+
+    assert x_rows == [0, 1, 2, 3]
+    name_by_coord = {
+        tuple(float(value) for value in line[2:5]): line[0]
+        for line in lines
+    }
+    for expected_label, node_idx in enumerate(ordered_node_ids, start=1):
+        coord_key = tuple(float(value) for value in coords[node_idx])
+        assert name_by_coord[coord_key] == f"X{expected_label}"
+
+
+@pytest.mark.core
+def test_linker_lines_of_center_frag_uses_explicit_x_order_not_node_membership_order():
+    linker = FrameLinker()
+    linker.molecule_labels = []
+    linker.molecule_coords = np.zeros((0, 3))
+    linker.mass_center_angstrom = np.zeros(3)
+
+    subgraph = nx.Graph()
+    subgraph.add_node(5, label="C", coords=np.array([0.0, 0.0, 0.0]))
+    subgraph.add_node(1, label="C", coords=np.array([1.0, 0.0, 0.0]))
+    subgraph.add_node(9, label="C", coords=np.array([2.0, 0.0, 0.0]))
+
+    lines, x_rows = linker._lines_of_center_frag(subgraph, [9, 5], [])
+
+    assert x_rows == [0, 2]
+    assert [line[0] for line in lines] == ["X2", "C2", "X1"]
+
+
+@pytest.mark.core
+def test_linker_attachment_ordering_rejects_unsupported_rule():
+    linker = FrameLinker()
+    coords = {
+        1: np.array([1.0, 0.0, 0.0]),
+        2: np.array([0.0, 1.0, 0.0]),
+        3: np.array([-1.0, 0.0, 0.0]),
+    }
+    records = linker._build_attachment_records([1, 2, 3], coords)
+
+    with pytest.raises(ValueError, match="Unsupported order_kind"):
+        linker._order_attachment_records(
+            records,
+            {"order_kind": "unsupported", "ordered_attachment_indices": [0, 1, 2]},
+            coords,
+        )
+
+
+@pytest.mark.core
+def test_linker_attachment_ordering_rejects_metadata_length_mismatch():
+    linker = FrameLinker()
+    coords = {
+        1: np.array([3.0, 0.0, 0.0]),
+        2: np.array([0.0, 1.0, 0.0]),
+        3: np.array([-1.0, 0.0, 0.0]),
+        4: np.array([0.0, -1.0, 0.0]),
+    }
+    records = linker._build_attachment_records([1, 2, 3, 4], coords)
+
+    with pytest.raises(ValueError, match="Attachment count does not match metadata rule"):
+        linker._order_attachment_records(
+            records,
+            {
+                "order_kind": "clockwise_local_topology",
+                "ordered_attachment_indices": [0, 1, 2],
+            },
+            coords,
+        )
+

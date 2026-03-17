@@ -522,6 +522,94 @@ class MetalOrganicFrameworkBuilder:
         role_alias = self._get_role_alias(role_id)
         return role_alias[:1] if role_alias else ""
 
+    def _normalize_cyclic_order_rule(self, order_rule):
+        if not order_rule:
+            return None
+
+        order_kind = order_rule.get("order_kind")
+        if not order_kind:
+            return None
+
+        return {
+            "order_kind": str(order_kind),
+            "ordered_attachment_indices": [
+                int(index)
+                for index in (order_rule.get("ordered_attachment_indices") or [])
+            ],
+        }
+
+    def _get_cyclic_order_rule(self, role_alias, canonical_metadata=None):
+        if not role_alias:
+            return None
+
+        metadata = canonical_metadata
+        if metadata is None:
+            metadata = self._get_canonical_role_metadata()
+
+        cyclic_rules = (metadata or {}).get("cyclic_order_rules", {})
+        return self._normalize_cyclic_order_rule(
+            cyclic_rules.get(str(role_alias))
+        )
+
+    def _get_active_linker_center_role_aliases(self):
+        graph = self._get_graph_for_role_lookup()
+        role_aliases = []
+        for bundle_id in sorted(self.bundle_registry):
+            bundle_entry = self.bundle_registry[bundle_id]
+            owner_role_id = bundle_entry.get("resolved_owner_role_id")
+            center_node = bundle_entry.get("center_node")
+            if owner_role_id is None and graph is not None and center_node in graph.nodes:
+                owner_role_id = self._normalize_runtime_role_id(
+                    graph.nodes[center_node].get("node_role_id"),
+                    namespace="node",
+                )
+            role_alias = self._get_role_alias(owner_role_id)
+            if role_alias:
+                role_aliases.append(role_alias)
+
+        return tuple(sorted(set(role_aliases)))
+
+    def _resolve_active_linker_center_order_rule(
+        self,
+        role_aliases=None,
+        canonical_metadata=None,
+    ):
+        active_aliases = tuple(
+            role_aliases
+            if role_aliases is not None
+            else self._get_active_linker_center_role_aliases()
+        )
+        if not active_aliases:
+            return None
+
+        metadata = canonical_metadata
+        if metadata is None:
+            metadata = self._get_canonical_role_metadata()
+
+        resolved_rules = {
+            role_alias: self._get_cyclic_order_rule(role_alias, metadata)
+            for role_alias in active_aliases
+        }
+        shared_rule = resolved_rules[active_aliases[0]]
+
+        if any(order_rule != shared_rule for order_rule in resolved_rules.values()):
+            raise ValueError(
+                "Current linker preprocessing cannot represent multiple active "
+                "center roles with different cyclic order rules. "
+                f"Active aliases: {list(active_aliases)}. "
+                f"Resolved rules: {resolved_rules}."
+            )
+
+        if shared_rule is None:
+            return None
+
+        return {
+            "order_kind": shared_rule["order_kind"],
+            "ordered_attachment_indices": list(
+                shared_rule["ordered_attachment_indices"]
+            ),
+        }
+
     def _extract_attachment_coords_by_type(self, attachment_data_by_type):
         coords_by_type = {}
         for source_atom_type, rows in (attachment_data_by_type or {}).items():
@@ -867,6 +955,55 @@ class MetalOrganicFrameworkBuilder:
             return registry[role_id]
         if len(registry) == 1:
             return next(iter(registry.values()))
+        return None
+    
+    def _get_node_registry_entry(self, graph, node_name):
+        if graph is None or node_name not in graph.nodes:
+            return None
+        role_id = self._normalize_runtime_role_id(
+            graph.nodes[node_name].get("node_role_id"),
+            namespace="node",
+        )
+        return self._get_registry_entry_by_role_id(
+            self.node_role_registry,
+            role_id,
+        )
+
+    def _get_center_registry_entry_for_node(self, graph, node_name):
+        if (
+            graph is None
+            or node_name not in graph.nodes
+            or not self.edge_role_registry
+        ):
+            return None
+
+        role_id = self._normalize_runtime_role_id(
+            graph.nodes[node_name].get("node_role_id"),
+            namespace="node",
+        )
+        if self._get_node_role_class(role_id) != "C":
+            return None
+
+        for neighbor in graph.neighbors(node_name):
+            edge = (node_name, neighbor)
+            if edge not in graph.edges:
+                edge = (neighbor, node_name)
+
+            edge_role_id = self._normalize_runtime_role_id(
+                graph.edges[edge].get("edge_role_id"),
+                namespace="edge",
+            )
+            role_entry = self._get_registry_entry_by_role_id(
+                self.edge_role_registry,
+                edge_role_id,
+            )
+            if role_entry is None:
+                continue
+            if role_entry.get("linker_center_attachment_coords_by_type"):
+                return role_entry
+            if role_entry.get("linker_center_data") is not None:
+                return role_entry
+
         return None
 
     def _append_provenance_history(self, instruction_id, event, **details):
@@ -1740,7 +1877,6 @@ class MetalOrganicFrameworkBuilder:
     def _build_bundle_records(self):
         graph = self._get_graph_for_role_lookup()
         canonical_metadata = self._get_canonical_role_metadata()
-        cyclic_order_rules = canonical_metadata.get("cyclic_order_rules", {})
         records = {}
         for bundle_id in sorted(self.bundle_registry):
             bundle_entry = self.bundle_registry[bundle_id]
@@ -1752,7 +1888,10 @@ class MetalOrganicFrameworkBuilder:
                     namespace="node",
                 )
             owner_alias = self._get_role_alias(owner_role_id)
-            order_rule = cyclic_order_rules.get(owner_alias, {})
+            order_rule = self._get_cyclic_order_rule(
+                owner_alias,
+                canonical_metadata,
+            ) or {}
             attachment_edge_role_ids = []
             for edge in bundle_entry.get("edge_list", ()):
                 if graph is None or not graph.has_edge(*edge):
@@ -2482,6 +2621,18 @@ class MetalOrganicFrameworkBuilder:
 
     def _read_linker(self):
         self.frame_linker.linker_connectivity = self.linker_connectivity
+        self.frame_linker.canonical_role_metadata = (
+            self._get_canonical_role_metadata() or None
+        )
+        self.frame_linker.center_role_aliases = (
+            self._get_active_linker_center_role_aliases()
+        )
+        self.frame_linker.center_order_rule = (
+            self._resolve_active_linker_center_order_rule(
+                role_aliases=self.frame_linker.center_role_aliases,
+                canonical_metadata=self.frame_linker.canonical_role_metadata,
+            )
+        )
         self.frame_linker.pdbreader.attachment_source_types = (
             self._get_attachment_source_types()
         )

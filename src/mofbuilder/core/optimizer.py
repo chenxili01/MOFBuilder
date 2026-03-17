@@ -2231,9 +2231,6 @@ def get_rot_trans_matrix(node, G, sorted_nodes, Xatoms_positions_dict):
     v2, node_center = get_connected_nodes_vectors(node, G)
     vecsB, _ = recenter_and_norm_vectors(v2, extra_mass_center=node_center)
     rmsd, rot, trans = superimpose_topology_hungarian(vecsA, vecsB)
-
-    
-    
     return rot, trans
 
 

@@ -226,3 +226,83 @@ validation:
 notes:
 - `PdbReader` attachment grouping is now configurable so builder can preserve non-`X` slot sources without globally treating all atoms as attachment anchors.
 - Optimizer now fails early on mixed typed payloads that arrive without builder-defined metadata instead of reaching Hungarian with mismatched vector counts.
+
+
+date:
+2026-03-16 18:34 CET
+role:
+Executor
+title:
+Linker cyclic attachment canonicalization
+
+branch:
+typed-attachment-slots
+phase:
+Phase 3
+checkpoint:
+linker-cyclic-ordering-applied
+
+summary:
+Implemented a linker-side hotfix so multitopic center fragments canonicalize attachment order from passive `cyclic_order_rules` metadata before `X1..Xn` labels are emitted. Builder now injects canonical role metadata plus the active center role alias into `FrameLinker`, linker computes clockwise local-topology order when requested, and center-fragment line emission now respects the explicit ordered attachment list instead of relying on subgraph node iteration order.
+
+files touched:
+src/mofbuilder/core/linker.py
+src/mofbuilder/core/builder.py
+tests/test_core_linker.py
+tests/test_core_builder.py
+STATUS.md
+WORKLOG.md
+
+invariants checked:
+- topology remains the source of truth
+- builder remains the owner of role identity and metadata
+- linker only materializes metadata-defined attachment ordering during fragment emission
+- optimizer remains unchanged and geometry ownership stays out of linker ordering policy
+- backward compatibility is preserved when no cyclic order rule exists
+
+validation:
+- `python -m py_compile src/mofbuilder/core/linker.py src/mofbuilder/core/builder.py tests/test_core_linker.py tests/test_core_builder.py`
+- `pytest -q tests/test_core_linker.py tests/test_core_builder.py -k "linker_attachment_ordering or lines_of_center_frag or injects_canonical_metadata_and_center_role_alias or clockwise_local_topology"` failed because `pytest` is not installed in this environment
+
+notes:
+- Added focused linker tests for no-rule fallback, explicit emission-order preservation, clockwise local-topology ordering, unsupported order kinds, and metadata length mismatch handling.
+- Added a builder test that verifies `_read_linker()` injects canonical metadata and the active center role alias into `FrameLinker` before fragment creation.
+
+
+date:
+2026-03-16 19:50 CET
+role:
+Executor
+title:
+Shared linker center-rule resolution hotfix
+
+branch:
+typed-attachment-slots
+phase:
+Phase 3
+checkpoint:
+linker-shared-center-order-rule-applied
+
+summary:
+Replaced the single active linker center-role alias shortcut with builder-owned collection of all active center aliases and pre-resolution of a shared cyclic order rule before linker fragment emission. `FrameLinker` now consumes an explicit `center_order_rule`, mixed C* aliases reuse that rule only when their cyclic metadata is identical, and conflicting center-role rules now raise loudly instead of silently falling back to raw traversal order.
+
+files touched:
+src/mofbuilder/core/builder.py
+src/mofbuilder/core/linker.py
+tests/test_core_builder.py
+STATUS.md
+WORKLOG.md
+
+invariants checked:
+- topology remains the source of truth
+- builder remains the owner of role identity and cyclic ordering semantics
+- linker only consumes a pre-resolved builder rule during center-fragment emission
+- optimizer remains unchanged and backward-compatible no-rule behavior is preserved
+
+validation:
+- `python -m py_compile src/mofbuilder/core/builder.py src/mofbuilder/core/linker.py tests/test_core_builder.py tests/test_core_linker.py`
+- `pytest -q tests/test_core_builder.py -k "center_role_aliases or center_order_rule or conflicting_rules"` failed because `pytest` is not installed in this environment
+- `pytest -q tests/test_core_linker.py -k "attachment_ordering or canonical_x_labels or explicit_x_order"` failed because `pytest` is not installed in this environment
+
+notes:
+- Multiple active center aliases now remain representable only when they share one canonical cyclic rule; conflicting rules still require a larger linker API change.

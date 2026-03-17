@@ -1,3 +1,4 @@
+import copy
 import json
 from types import MethodType, SimpleNamespace
 
@@ -258,6 +259,140 @@ def _configure_phase_four_anchor_inputs(
     builder.linker_outer_attachment_coords_by_type = {}
     builder._update_node_role_registry_data()
     builder._update_edge_role_registry_data()
+
+
+@pytest.mark.core
+def test_get_active_linker_center_role_aliases_returns_all_active_aliases():
+    builder = MetalOrganicFrameworkBuilder(mof_family="TEST-MULTI")
+    builder.bundle_registry = {
+        "bundle:C0": {
+            "center_node": "C0",
+            "resolved_owner_role_id": "node:CA",
+        },
+        "bundle:C1": {
+            "center_node": "C1",
+            "resolved_owner_role_id": "node:CB",
+        },
+        "bundle:C2": {
+            "center_node": "C2",
+            "resolved_owner_role_id": "node:CA",
+        },
+    }
+
+    assert builder._get_active_linker_center_role_aliases() == ("CA", "CB")
+
+
+@pytest.mark.core
+def test_resolve_active_linker_center_order_rule_accepts_shared_rule_for_multiple_aliases():
+    builder = MetalOrganicFrameworkBuilder(mof_family="TEST-MULTI")
+    canonical_metadata = copy.deepcopy(_canonical_family_role_metadata())
+    canonical_metadata["roles"]["CB"] = {
+        "role_class": "C",
+        "canonical_role_id": "node:CB",
+    }
+    canonical_metadata["cyclic_order_rules"]["CB"] = {
+        "ordered_attachment_indices": [0, 1],
+        "order_kind": "clockwise_local_topology",
+    }
+    builder.mof_top_library.canonical_role_metadata = canonical_metadata
+    builder.role_metadata = {"canonical_role_metadata": canonical_metadata}
+    builder.bundle_registry = {
+        "bundle:C0": {
+            "center_node": "C0",
+            "resolved_owner_role_id": "node:CA",
+        },
+        "bundle:C1": {
+            "center_node": "C1",
+            "resolved_owner_role_id": "node:CB",
+        },
+    }
+
+    assert builder._resolve_active_linker_center_order_rule() == {
+        "ordered_attachment_indices": [0, 1],
+        "order_kind": "clockwise_local_topology",
+    }
+
+
+@pytest.mark.core
+def test_resolve_active_linker_center_order_rule_rejects_conflicting_rules():
+    builder = MetalOrganicFrameworkBuilder(mof_family="TEST-MULTI")
+    canonical_metadata = copy.deepcopy(_canonical_family_role_metadata())
+    canonical_metadata["roles"]["CB"] = {
+        "role_class": "C",
+        "canonical_role_id": "node:CB",
+    }
+    canonical_metadata["cyclic_order_rules"]["CB"] = {
+        "ordered_attachment_indices": [1, 0],
+        "order_kind": "clockwise_local_topology",
+    }
+    builder.mof_top_library.canonical_role_metadata = canonical_metadata
+    builder.role_metadata = {"canonical_role_metadata": canonical_metadata}
+    builder.bundle_registry = {
+        "bundle:C0": {
+            "center_node": "C0",
+            "resolved_owner_role_id": "node:CA",
+        },
+        "bundle:C1": {
+            "center_node": "C1",
+            "resolved_owner_role_id": "node:CB",
+        },
+    }
+
+    with pytest.raises(ValueError, match="different cyclic order rules"):
+        builder._resolve_active_linker_center_order_rule()
+
+
+@pytest.mark.core
+def test_read_linker_injects_canonical_metadata_and_resolved_center_order_rule(monkeypatch):
+    builder = _make_role_aware_snapshot_builder(prepare_resolve=False)
+    builder.linker_molecule = object()
+
+    captured = {}
+
+    def fake_linker_create(self, molecule=None):
+        captured["molecule"] = molecule
+        captured["canonical_role_metadata"] = self.canonical_role_metadata
+        captured["center_role_aliases"] = self.center_role_aliases
+        captured["center_order_rule"] = self.center_order_rule
+        self.linker_center_data = np.array(
+            [
+                ["X", "Fr1", 0, "EDGE", 1, "0.0", "0.0", "0.0", 1.0, 0.0, "X"],
+                ["X", "Fr2", 1, "EDGE", 1, "1.0", "0.0", "0.0", 1.0, 0.0, "X"],
+            ],
+            dtype=object,
+        )
+        self.linker_center_X_data = self.linker_center_data.copy()
+        self.linker_center_attachment_data_by_type = {
+            "X": self.linker_center_X_data.copy()
+        }
+        self.linker_outer_data = np.array(
+            [
+                ["X", "Fr1", 0, "EDGE", 1, "0.0", "1.0", "0.0", 1.0, 0.0, "X"],
+                ["X", "Fr2", 1, "EDGE", 1, "1.0", "1.0", "0.0", 1.0, 0.0, "X"],
+            ],
+            dtype=object,
+        )
+        self.linker_outer_X_data = self.linker_outer_data.copy()
+        self.linker_outer_attachment_data_by_type = {
+            "X": self.linker_outer_X_data.copy()
+        }
+        self.fake_edge = False
+
+    monkeypatch.setattr(
+        builder.frame_linker,
+        "create",
+        MethodType(fake_linker_create, builder.frame_linker),
+    )
+
+    builder._read_linker()
+
+    assert captured["molecule"] is builder.linker_molecule
+    assert captured["canonical_role_metadata"] == _canonical_family_role_metadata()
+    assert captured["center_role_aliases"] == ("CA",)
+    assert captured["center_order_rule"] == {
+        "ordered_attachment_indices": [0, 1],
+        "order_kind": "clockwise_local_topology",
+    }
 
     graph = builder.net_optimizer.sG if getattr(builder.net_optimizer, "sG", None) is not None else builder.G
     graph.nodes["V0"]["ccoords"] = np.array([0.0, 0.0, 0.0])

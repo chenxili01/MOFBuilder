@@ -1,7 +1,7 @@
 # STATUS.md
 
 - Phase: Phase 3
-- Checkpoint: mixed-attachment-hotfix-applied
+- Checkpoint: linker-shared-center-order-rule-applied
 - Status: COMPLETED
 - Next step: done
 - Last update: 2026-03-16
@@ -14,10 +14,14 @@ Objective:
 Preserve heterogeneous attachment slot identity.
 
 Current focus:
-Phase 3 remains complete. A follow-up hotfix now preserves mixed typed
-attachment slots in source fragment order through builder and optimizer payload
-preparation so `node_X_pos_dict` keeps the full attachment-slot count for
-heterogeneous nodes while legacy `X`-only compatibility remains available.
+Phase 3 remains complete. A follow-up linker hotfix now canonicalizes
+center-fragment cyclic attachment order from `cyclic_order_rules` metadata
+before `X1..Xn` emission, while builder injects the active center alias set,
+a pre-resolved shared `center_order_rule`, and canonical metadata into
+`FrameLinker`. Mixed C* role families now reuse a shared cyclic rule only when
+their rules are identical and fail loudly when current linker preprocessing
+cannot represent conflicting center-role ordering safely. Optimizer ownership
+and legacy no-rule extraction order remain unchanged.
 
 Invariants:
 - topology source of truth
