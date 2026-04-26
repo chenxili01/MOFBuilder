@@ -389,6 +389,25 @@ class NetOptimizer:
         norm_xx_vector_record = []
         rot_record = []
 
+        def correct_rot_direction(rot, source_vec, target_vec):
+            if (np.linalg.norm(source_vec) == 0
+                    or np.linalg.norm(target_vec) == 0):
+                return rot
+
+            rotated_source_vec = np.dot(source_vec, rot)
+            if np.dot(rotated_source_vec, target_vec) >= 0:
+                return rot
+
+            axis = np.cross(rotated_source_vec, target_vec)
+            if np.linalg.norm(axis) == 0:
+                axis = np.cross(rotated_source_vec, [1, 0, 0])
+                if np.linalg.norm(axis) == 0:
+                    axis = np.cross(rotated_source_vec, [0, 1, 0])
+
+            axis = axis / np.linalg.norm(axis)
+            flip_matrix = -np.eye(3) + 2 * np.outer(axis, axis)
+            return np.dot(rot, flip_matrix)
+
         # edges = {}
         for (i, j), pair in optimized_pair.items():
             x_idx_i, x_idx_j = pair
@@ -434,28 +453,38 @@ class NetOptimizer:
                     norm_xx_vector_record.append(norm_xx_vector)
                     # the rot may be opposite, so we need to check the angle between the two vectors
                     # if the angle is larger than 90 degree, we need to reverse the rot
-                    roted_xx = np.dot(extended_e_xx_vec, rot)
+                    if self.EC_X_data is None:
+                        roted_xx = np.dot(extended_e_xx_vec, rot)
 
-                    if np.dot(roted_xx[1] - roted_xx[0],
-                              xx_vector[1] - xx_vector[0]) < 0:
-                        ##rotate 180 around the axis of the cross product of the two vectors
-                        axis = np.cross(roted_xx[1] - roted_xx[0],
-                                        xx_vector[1] - xx_vector[0])
-                        # if 001 not linear to the two vectors
-                        if np.linalg.norm(axis) == 0:
-                            check_z_axis = np.cross(roted_xx[1] - roted_xx[0],
-                                                    [0, 0, 1])
-                            if np.linalg.norm(check_z_axis) == 0:
-                                axis = np.array([1, 0, 0])
-                            else:
-                                axis = np.array([0, 0, 1])
+                        if np.dot(roted_xx[1] - roted_xx[0],
+                                  xx_vector[1] - xx_vector[0]) < 0:
+                            ##rotate 180 around the axis of the cross product of the two vectors
+                            axis = np.cross(roted_xx[1] - roted_xx[0],
+                                            xx_vector[1] - xx_vector[0])
+                            # if 001 not linear to the two vectors
+                            if np.linalg.norm(axis) == 0:
+                                check_z_axis = np.cross(
+                                    roted_xx[1] - roted_xx[0], [0, 0, 1])
+                                if np.linalg.norm(check_z_axis) == 0:
+                                    axis = np.array([1, 0, 0])
+                                else:
+                                    axis = np.array([0, 0, 1])
 
-                        axis = axis / np.linalg.norm(axis)
-                        flip_matrix = np.eye(3) - 2 * np.outer(
-                            axis, axis)  # Householder matrix for reflection
-                        rot = np.dot(rot, flip_matrix)
+                            axis = axis / np.linalg.norm(axis)
+                            flip_matrix = np.eye(3) - 2 * np.outer(
+                                axis, axis)  # Householder matrix for reflection
+                            rot = np.dot(rot, flip_matrix)
                     # Flip the last column of the rotation matrix if the determinant is negative
                     rot_record.append(rot)
+                if self.EC_X_data is not None:
+                    source_vec = e_xx_vec[1] - e_xx_vec[0]
+                    if "CV" in str(i):
+                        target_vec = x_j - x_i
+                    elif "CV" in str(j):
+                        target_vec = x_i - x_j
+                    else:
+                        target_vec = xx_vector[1] - xx_vector[0]
+                    rot = correct_rot_direction(rot, source_vec, target_vec)
             else:
                 #get a random rotation matrix
                 rot = np.eye(3)
