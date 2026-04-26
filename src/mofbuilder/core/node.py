@@ -244,6 +244,12 @@ class FrameNode:
             f"Found {len(metal_nodes)} metal nodes, {len(oxygen_nodes)} oxygen nodes, {len(hydrogen_nodes)} hydrogen nodes."
         )
         self.ostream.flush()
+        
+        #firstly clean all bonds to metal
+        for mn in metal_nodes:
+            neighbor_nodes = list(sG.adj[mn])
+            for n in neighbor_nodes:
+                sG.remove_edge(mn, n)
 
         # Add missing edges between metal and nearest oxygens
         for metal_n in metal_nodes:

@@ -44,6 +44,7 @@ class FrameLinker:
         save_files: If True, write output files.
         molecule: VeloxChem (or compatible) molecule when set directly.
         metals: List of metal atom indices in linker.
+        isolated_atoms_indices: List of isolated atom indices in linker (not in largest connected component).
         linker_center_data: Center fragment atom data (set by create).
         linker_center_X_data: Center X-atom data.
         linker_outer_data: Outer branch(es) atom data.
@@ -78,6 +79,7 @@ class FrameLinker:
         self.save_files = False
         self.molecule = None
         self.metals = []
+        self.isolated_atoms_indices = []
         self.linker_center_data = None
         self.linker_center_X_data = None
         self.linker_outer_data = None
@@ -262,7 +264,7 @@ class FrameLinker:
                 break
         return pairXs
 
-    def _lines_of_center_frag(self, subgraph_center_frag, Xs_indices, metals):
+    def _lines_of_center_frag(self, subgraph_center_frag, Xs_indices, metals,isolated_atoms_indices):
         labels = self.molecule_labels
         coords = self.molecule_coords
         mass_center_angstrom = self.mass_center_angstrom
@@ -286,6 +288,13 @@ class FrameLinker:
             coord = coords[cm] - mass_center_angstrom
             name = label + str(count)
             lines.append([name, label, coord[0], coord[1], coord[2]])
+            count += 1
+        for ci in isolated_atoms_indices:
+            label = labels[ci]
+            coord = coords[ci] - mass_center_angstrom
+            name = label + str(count)
+            lines.append([name, label, coord[0], coord[1], coord[2]])
+            count += 1
 
         return lines, Xs
 
@@ -406,6 +415,11 @@ class FrameLinker:
         # Remove metal atoms from the graph
         self._create_lG(molecule)
         self.lG.remove_nodes_from(self.metals)
+        #only keep the largest connected component for center finding, in case there are isolated subsets in the graph
+        if not nx.is_connected(self.lG):
+            largest_cc = max(nx.connected_components(self.lG), key=len)
+            self.isolated_atoms_indices = self.lG.nodes - largest_cc
+            self.lG = self.lG.subgraph(largest_cc).copy()
         self._distinguish_G_centers(self.lG)
         # For large cycles, reduce center nodes to a pair
         if linker_connectivity == 2 and len(self.center_nodes) > 6:
@@ -462,10 +476,10 @@ class FrameLinker:
                     x_node = potential_frags[f]['frag_center']
                     temp_lG.remove_nodes_from([n for n in frag if n != x_node])
                 self.lines, _ = self._lines_of_center_frag(
-                    temp_lG, center_Xs, self.metals)
+                    temp_lG, center_Xs, self.metals,self.isolated_atoms_indices)
             else:
                 self.lines, _ = self._lines_of_center_frag(
-                    temp_lG, center_Xs, self.metals)
+                    temp_lG, center_Xs, self.metals,self.isolated_atoms_indices)
             if self.save_files:
                 edge_pdb_name = str(Path(save_edges_dir, "diedge"))
                 self.create_pdb(edge_pdb_name, self.lines)
@@ -525,7 +539,7 @@ class FrameLinker:
                     outer_frag_nodes = f
 
             self.lines, _ = self._lines_of_center_frag(
-                self.lG.subgraph(center_frag_nodes), center_Xs, self.metals)
+                self.lG.subgraph(center_frag_nodes), center_Xs, self.metals,self.isolated_atoms_indices)
             self.rows, self.frag_Xs = self._lines_of_single_frag(
                 self.lG.subgraph(outer_frag_nodes),
                 branch_outer_Xs + branch_inner_Xs)
