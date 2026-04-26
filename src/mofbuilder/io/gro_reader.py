@@ -97,14 +97,13 @@ class GroReader:
 
         inputfile = str(self.filepath)
         with open(inputfile, "r") as fp:
-            lines = fp.readlines()
+            lines = fp.readlines()[2:]  # Skip first 2 lines (title and atom count)
 
         data = []
         count = 1
 
         for line in lines:
-            line = line.strip()
-            if len(line.strip()) < 4:
+            if len(line.strip().split()) < 4:
                 continue
             # GRO format: See GROMACS gro documentation for line slices.
             residue_number = int(line[0:5].strip())
