@@ -60,6 +60,7 @@ class GromacsForcefieldMerger:
         self.termination_name: Optional[str] = None
         self.linker_itp_dir: str = ''
         self.linker_name: Optional[str] = None
+        self.linker_names: Optional[Sequence[str]] = None
         self.residues_info: Optional[Dict[str, int]] = None
         self.mof_name: Optional[str] = None
         self.other_residues: List[str] = ['O', 'HO', 'HHO']
@@ -122,7 +123,21 @@ class GromacsForcefieldMerger:
         target_itp_path = Path(self.target_dir, 'MD_run/itps')
         self._backup_and_rename(str(target_itp_path))
         target_itp_path.mkdir(parents=True, exist_ok=True)
-
+        #copy amber itp files for ions and gases
+        amber_itp_path = Path(data_path, "amber14sb_OL21.ff")
+        #this is a folder
+        dest_amber_itp_path = Path(target_itp_path, "amber14sb_OL21.ff")
+        def copy_folder(src: Path, dest: Path) -> None:
+            if not dest.is_dir():
+                dest.mkdir(parents=True, exist_ok=True)
+            for item in src.iterdir():
+                if item.is_file():
+                    self._copy_file(str(item), str(dest / item.name))
+                elif item.is_dir():
+                    copy_folder(item, dest / item.name)
+        copy_folder(amber_itp_path, dest_amber_itp_path)
+        
+        
         # Copy node ITPs
         node_itp_name = f"{self.node_metal_type}_dummy" if self.dummy_atom_node else f"{self.node_metal_type}"
         if self._debug:
@@ -135,10 +150,16 @@ class GromacsForcefieldMerger:
 
         # Copy linker itp(s)
         if self.linker_itp_dir not in [None, '']:
+            linker_names = {
+                Path(str(name)).stem
+                for name in (self.linker_names or [])
+            }
+            if not linker_names and self.linker_name not in [None, '']:
+                linker_names = {Path(str(self.linker_name)).stem}
             for j in Path(self.linker_itp_dir).rglob('*.itp'):
                 itp_name = j.stem
                 dest_p = Path(target_itp_path, j.name)
-                if itp_name == Path(str(self.linker_name)).stem:
+                if itp_name in linker_names:
                     self._copy_file(str(j), str(dest_p))
 
         # Copy termination itp
@@ -367,12 +388,20 @@ class GromacsForcefieldMerger:
             top_res_lines.append("\n")
 
         top_itp_lines = []
-        for i in Path(itp_path).rglob("*itp"):
-            if str(Path(i).name) not in ["posre.itp"]:
+        top_itp_lines.append("; Include forcefield parameters\n")
+        #include amber ff firstly
+        #top_itp_lines.append('#include "itps/amber14sb_OL21.ff/forcefield.itp"\n')
+        #restrain depth of the rglobal search to avoid including itp files in subfolders such as posre
+        itps = [i for i in Path(itp_path).rglob("*.itp") if i.is_file() and i.suffix == ".itp" and str(Path(i).name) not in ["posre.itp"]]
+        for i in itps[::-1]:  # reverse the order to include amber ff first, so that the atomtypes in the itp files of nodes and linkers can overwrite those in amber ff if there are overlaps
+            if i.name not in ["posre.itp", "ffnonbonded.itp","ffbonded.itp","gbsa.itp"]:  
                 if self._debug:
                     self.ostream.print_info(f"found file: {i} in path {itp_path}")
                     self.ostream.flush()
-                line = '#include "itps/' + i.name + '"\n'
+                    # use relative path to the top file, which is in the same folder as the itp folder
+                    #line = '#include "itps/' + i.name + '"\n'
+                    #the name cannot show the subfolder, which is important for distinguishing different itp files with the same name in different subfolders (e.g. posre)
+                line = '#include "itps/' + str(i.relative_to(itp_path)) + '"\n'
                 top_itp_lines.append(line)
                 if self._debug:
                     self.ostream.print_info(f"line{line}")
