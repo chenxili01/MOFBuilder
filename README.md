@@ -119,6 +119,7 @@ See the [LICENSE](LICENSE) file for details.
 If you use **MOFBuilder** in your research, please cite:
 
 ```bibtex
+Li, C., Ahlquist, M.S.G. MOFBuilder: automated end-to-end modeling of MOF dynamics for high-throughput screening. npj Comput Mater 12, 156 (2026). https://doi.org/10.1038/s41524-026-02086-x
 ```
 
 ---
