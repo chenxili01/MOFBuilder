@@ -6,9 +6,9 @@ from typing import Any, List, Optional
 
 import numpy as np
 import networkx as nx
-from veloxchem.outputstream import OutputStream
-from veloxchem.veloxchemlib import mpi_master
-from veloxchem.errorhandler import assert_msg_critical
+from ..vlx_compat import OutputStream
+from ..vlx_compat import mpi_master
+from ..vlx_compat import assert_msg_critical
 import mpi4py.MPI as MPI
 import sys
 from .other import safe_copy

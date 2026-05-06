@@ -1,7 +1,7 @@
 import sys
 import mpi4py.MPI as MPI
-from veloxchem.outputstream import OutputStream
-from veloxchem.veloxchemlib import mpi_master
+from ..vlx_compat import OutputStream
+from ..vlx_compat import mpi_master
 from typing import Optional, Any, Dict
 from ..io.xyz_writer import XyzWriter
 

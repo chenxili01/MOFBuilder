@@ -21,8 +21,8 @@ from openmm.unit import (
 import mpi4py.MPI as MPI
 import sys
 from typing import Optional, List, Any, Union
-from veloxchem.outputstream import OutputStream
-from veloxchem.veloxchemlib import mpi_master
+from ..vlx_compat import OutputStream
+from ..vlx_compat import mpi_master
 
 
 class OpenmmSetup:

@@ -3,7 +3,7 @@
 A Python toolkit for constructing and preparing MOF structures.
 
 [![Docs](https://img.shields.io/badge/docs-online-blue)](https://chenxili01.github.io/MOFBuilder/)
-[![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
+[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://badge.fury.io/py/mofbuilder.svg)](https://badge.fury.io/py/mofbuilder)
 
@@ -108,7 +108,7 @@ https://chenxili01.github.io/MOFBuilder/
 
 ## License
 
-This project is licensed under the **GNU Lesser General Public License v3.0 or later (LGPL-3.0-or-later)**.
+This project is licensed under the **BSD 3-Clause License**.
 
 See the [LICENSE](LICENSE) file for details.
 
@@ -130,4 +130,3 @@ Li, C., Ahlquist, M.S.G. MOFBuilder: automated end-to-end modeling of MOF dynami
 - **Source code:** https://github.com/chenxili01/MOFBuilder
 - **Issues:** https://github.com/chenxili01/MOFBuilder/issues
 - **Nodes/Net library for MOFBuilder:** https://github.com/chenxili01/MOFBuilder_library
-

@@ -3,14 +3,14 @@ import re
 import sys
 from pathlib import Path
 from typing import Optional, Any, List, Dict, Tuple, Sequence
-from veloxchem.outputstream import OutputStream
-from veloxchem.molecule import Molecule
-from veloxchem.scfrestdriver import ScfRestrictedDriver
-from veloxchem.molecularbasis import MolecularBasis
-from veloxchem.optimizationdriver import OptimizationDriver
-from veloxchem.mmforcefieldgenerator import MMForceFieldGenerator
-from veloxchem.veloxchemlib import mpi_master, hartree_in_kcalpermol, hartree_in_kjpermol
-from veloxchem.errorhandler import assert_msg_critical
+from ..vlx_compat import OutputStream
+from ..vlx_compat import Molecule
+from ..vlx_compat import ScfRestrictedDriver
+from ..vlx_compat import MolecularBasis
+from ..vlx_compat import OptimizationDriver
+from ..vlx_compat import MMForceFieldGenerator
+from ..vlx_compat import mpi_master, hartree_in_kcalpermol, hartree_in_kjpermol
+from ..vlx_compat import assert_msg_critical
 import mpi4py.MPI as MPI
 
 

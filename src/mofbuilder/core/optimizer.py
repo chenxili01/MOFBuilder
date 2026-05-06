@@ -14,10 +14,10 @@ try:
 except ImportError:
     pass
 
-from veloxchem.outputstream import OutputStream
-from veloxchem.veloxchemlib import mpi_master
-from veloxchem.errorhandler import assert_msg_critical
-from veloxchem.molecule import Molecule
+from ..vlx_compat import OutputStream
+from ..vlx_compat import mpi_master
+from ..vlx_compat import assert_msg_critical
+from ..vlx_compat import Molecule
 
 from ..io.basic import nn, nl, pname, is_list_A_in_B
 from ..utils.geometry import (unit_cell_to_cartesian_matrix,

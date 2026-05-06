@@ -3,10 +3,10 @@ import sys
 import numpy as np
 from typing import Optional, Any, Sequence
 from .basic import nn, nl
-from veloxchem.outputstream import OutputStream
-from veloxchem.veloxchemlib import mpi_master
+from ..vlx_compat import OutputStream
+from ..vlx_compat import mpi_master
 import mpi4py.MPI as MPI
-from veloxchem.errorhandler import assert_msg_critical
+from ..vlx_compat import assert_msg_critical
 
 
 class GroWriter:

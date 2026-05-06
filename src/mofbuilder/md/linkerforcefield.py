@@ -13,17 +13,17 @@ from typing import (
     Union,
 )
 from pathlib import Path
-from veloxchem.molecule import Molecule
-from veloxchem.mmforcefieldgenerator import MMForceFieldGenerator
-from veloxchem.xtbdriver import XtbDriver
-from veloxchem.optimizationdriver import OptimizationDriver
-from veloxchem.molecularbasis import MolecularBasis
-from veloxchem.scfrestdriver import ScfRestrictedDriver
-from veloxchem.scfunrestdriver import ScfUnrestrictedDriver
+from ..vlx_compat import Molecule
+from ..vlx_compat import MMForceFieldGenerator
+from ..vlx_compat import XtbDriver
+from ..vlx_compat import OptimizationDriver
+from ..vlx_compat import MolecularBasis
+from ..vlx_compat import ScfRestrictedDriver
+from ..vlx_compat import ScfUnrestrictedDriver
 from ..io.basic import nn
-from veloxchem.outputstream import OutputStream
-from veloxchem.veloxchemlib import mpi_master, hartree_in_kcalpermol, hartree_in_kjpermol
-from veloxchem.errorhandler import assert_msg_critical
+from ..vlx_compat import OutputStream
+from ..vlx_compat import mpi_master, hartree_in_kcalpermol, hartree_in_kjpermol
+from ..vlx_compat import assert_msg_critical
 import mpi4py.MPI as MPI
 from networkx.algorithms.isomorphism import GraphMatcher
 

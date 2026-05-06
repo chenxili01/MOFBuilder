@@ -2,18 +2,18 @@ import numpy as np
 from pathlib import Path
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial import cKDTree
-from veloxchem.molecule import Molecule
-from veloxchem.mmforcefieldgenerator import MMForceFieldGenerator
-from veloxchem.xtbdriver import XtbDriver
-from veloxchem.optimizationdriver import OptimizationDriver
-from veloxchem.molecularbasis import MolecularBasis
-from veloxchem.scfrestdriver import ScfRestrictedDriver
-from veloxchem.scfunrestdriver import ScfUnrestrictedDriver
+from ..vlx_compat import Molecule
+from ..vlx_compat import MMForceFieldGenerator
+from ..vlx_compat import XtbDriver
+from ..vlx_compat import OptimizationDriver
+from ..vlx_compat import MolecularBasis
+from ..vlx_compat import ScfRestrictedDriver
+from ..vlx_compat import ScfUnrestrictedDriver
 from ..io.basic import nn
 from ..core.other import safe_dict_copy
-from veloxchem.outputstream import OutputStream
-from veloxchem.veloxchemlib import mpi_master, hartree_in_kcalpermol, hartree_in_kjpermol
-from veloxchem.errorhandler import assert_msg_critical
+from ..vlx_compat import OutputStream
+from ..vlx_compat import mpi_master, hartree_in_kcalpermol, hartree_in_kjpermol
+from ..vlx_compat import assert_msg_critical
 import mpi4py.MPI as MPI
 import sys
 import math
@@ -471,7 +471,7 @@ class SolvationBuilder:
         Returns:
             List[Molecule]: List of imported Molecule objects.
         """
-        import veloxchem as vlx
+        from ..vlx_compat import vlx
         solvents_mols = []
         for solvent_file in solvents_xyz_files:
             mol = vlx.Molecule.read_xyz_file(solvent_file)
@@ -1164,7 +1164,7 @@ if __name__ == "__main__":
         box_buffer=2)
     print("Total time (s):", time.time() - start_time)
 
-    import veloxchem as vlx
+    from ..vlx_compat import vlx
     water = vlx.Molecule.read_xyz_file("water.xyz")
     dmso = vlx.Molecule.read_xyz_file("dmso.xyz")
     solb = vlx.SolvationBuilder()

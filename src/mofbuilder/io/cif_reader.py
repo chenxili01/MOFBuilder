@@ -3,9 +3,9 @@ import numpy as np
 from pathlib import Path
 from .basic import convert_fraction_to_decimal, remove_bracket, remove_quotes, remove_tail_number, extract_quote_lines
 from .basic import find_keyword, extract_xyz_lines
-from veloxchem.outputstream import OutputStream
-from veloxchem.veloxchemlib import mpi_master
-from veloxchem.errorhandler import assert_msg_critical
+from ..vlx_compat import OutputStream
+from ..vlx_compat import mpi_master
+from ..vlx_compat import assert_msg_critical
 import mpi4py.MPI as MPI
 import sys
 """

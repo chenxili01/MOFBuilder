@@ -10,10 +10,10 @@ import numpy as np
 import networkx as nx
 import mpi4py.MPI as MPI
 
-from veloxchem.outputstream import OutputStream
-from veloxchem.veloxchemlib import mpi_master
-from veloxchem.errorhandler import assert_msg_critical
-from veloxchem.environment import get_data_path
+from ..vlx_compat import OutputStream
+from ..vlx_compat import mpi_master
+from ..vlx_compat import assert_msg_critical
+from ..vlx_compat import get_data_path
 
 
 class MofTopLibrary:
